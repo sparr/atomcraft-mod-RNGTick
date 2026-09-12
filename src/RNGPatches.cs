@@ -44,7 +44,7 @@ namespace RNGTick;
 /// wrapper's call to <c>Roll</c> really went through the patch.</para>
 /// </summary>
 [HarmonyPatch]
-public static class RNGPatches
+public static partial class RNGPatches
 {
     /// <summary>The name this mod patches, in one place rather than spelled into an attribute.</summary>
     public const string TargetName = nameof(RNG.Roll);
@@ -112,17 +112,9 @@ public static class RNGPatches
     private static string Signature(MethodBase method) =>
         string.Join(", ", method.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
 
-    [HarmonyPostfix]
-    public static void AfterRoll(int tick, ref int __result)
-    {
-        // Before RNG.Init the volume is null and Roll returns a constant 0 for everything. That
-        // is the game's own behavior in a state where nothing should be rolling yet, and an
-        // offset applied to it would be inventing randomness rather than redistributing it.
-        // RNG.Init is called when a session starts, not from Game._Ready, so this window is real
-        // and lasts from launch until the player enters a world.
-        if (!RNG.IsInitialized)
-            return;
-
-        __result = TickOffset.Apply(__result, tick);
-    }
+    // AfterRoll is generated, not written here: see RNGTick.Generator and TickOffset.Apply.
+    // A postfix that calls out to one other method measured 8 ns per roll more than the same
+    // arithmetic written flat, and a second level of calls cost nothing further, so the JIT is
+    // declining the first inline whatever AggressiveInlining asks. Roslyn does not inline, so the
+    // flat copy has to be generated from the one that is written by hand.
 }

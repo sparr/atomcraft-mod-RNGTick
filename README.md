@@ -244,48 +244,41 @@ the shape of the code suggests:
   the JIT cannot turn into a multiply, and that is 2 ns of the 14. Masking to 31 bits instead
   would save almost nothing.
 
-### Half of it is the abstractions, and the compiler cannot help
+### Half of it was the abstractions, and a source generator gets it back
 
-`minimal/RNGTickMinimal.cs` is this mod with the modes, the config, and the split into
-`TickOffset` taken out -- one postfix doing the arithmetic inline. It produces identical rolls,
-asserted over 512 samples before it is timed, and `RollBenchmarks` swaps it in for the real one.
-Adding rungs back one at a time:
+A postfix that calls out to one other method costs about 8 ns per roll more than the same
+arithmetic written flat, and a second level of calls costs nothing further -- the JIT declines the
+first inline and that is the whole penalty, `AggressiveInlining` on every method in the chain
+notwithstanding. Measured three ways before believing it: rebuilding the shipped shape inside the
+test assembly costs the same as the real one, so it is not the assembly boundary (0.2 ns); the
+mode switch is 1.4 ns; two levels of calls cost the same as three.
+
+Roslyn does not inline -- it emits `call` and leaves the decision to the JIT -- so the flat copy
+has to be generated. `gen/` is a source generator that flattens `TickOffset.Apply` and everything
+it calls into `RNGPatches.AfterRoll`, which is why that method does not appear in `RNGPatches.cs`.
+The arithmetic is still written once, as ordinary analyzable C#, in `TickOffset`.
 
 | | ns |
 | --- | ---: |
-| inlined array lookup | 3.6 |
-| minimal postfix, one method, no modes | 13.3 |
-| plus the mode switch, still one method | **14.6** |
-| two methods: postfix calls one that holds the switch and the wrap | 23.4 |
-| three methods: the shipped shape, recompiled into the test assembly | 22.3 |
-| shipped | 22.5 |
+| inlined array lookup | 3.8 |
+| minimal postfix, one method, no modes | 13.6 |
+| the same plus the mode switch, still one method | 15.3 |
+| **shipped, generated flat** | **16.1** |
+| what a hand-written call into `TickOffset` cost | 22.4 |
 
-Three things fall out of that ladder.
+So about **12 ns per roll over an inlined vanilla one**, against 19 before, and within a nanosecond
+of what writing the whole thing by hand in the postfix would buy. `minimal/RNGTickMinimal.cs` and
+the copy in `RollBenchmarks` remain as the control: the benchmark asserts all of them produce
+identical rolls before it times them.
 
-**It is not the assembly boundary.** The shipped shape rebuilt inside the test assembly costs
-22.3 against the real 22.5 -- 0.2 ns. Worth checking, since the mod is loaded from a stream out
-of a zip rather than off disk, but it explains nothing.
+The generator is deliberately the narrowest thing that covers this mod rather than a general
+inliner. It handles static methods marked `[Inlinable]` with a single trailing `return`, called
+from the one method marked `[InlineIntoPostfix]`, and reports `RNGTICK001` rather than generating
+anything it does not fully understand. It preserves `unchecked` blocks, because `Mix` relies on
+multiplication wrapping.
 
-**It is not the modes.** The static read and the three-way switch are 1.3 ns.
-
-**It is the first call, and only the first.** Two levels costs the same as three. Whatever
-`AfterRoll` calls, it pays about 8 ns for the call and nothing further for what happens below it,
-`AggressiveInlining` on every method in the chain notwithstanding.
-
-So there is no arrangement of methods that gets the speed back -- and no compiler switch either.
-Roslyn does not inline; it emits `call` and leaves every such decision to the JIT, and
-`MethodImplOptions.AggressiveInlining` is a request the JIT has declined here. Build-time options
-exist -- a source generator emitting the flattened body, or IL weaving with Fody -- but both are
-heavy machinery to avoid retyping fifteen lines.
-
-The fix, if it is wanted, is the row in bold: put the arithmetic in `AfterRoll` and keep all three
-modes. **22.5 to 14.6 ns, cutting the mod's overhead from 18.9 to 11.0.** The price is that the
-arithmetic then exists twice, since `TickOffset` is what the tests and this document describe --
-and the equivalence check in `RollBenchmarks` is what would catch the two drifting apart. It has
-not been done, because both numbers are small against how rarely a normal world rolls.
-
-Whether 19 ns matters depends entirely on roll density. In the condensation fixture, which is
-about as roll-heavy as a region gets at 1922 rolls per tick, it is roughly 12% of the tick. A
+Whether 12 ns matters depends entirely on roll density. In the condensation fixture, which is
+about as roll-heavy as a region gets at 1922 rolls per tick, it is roughly 8% of the tick. A
 normal world rolls far less than that. If a heavily-loaded world feels slower, `Off` is the A/B
 test, and it recovers all but the 4 ns detour.
 

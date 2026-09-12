@@ -137,15 +137,18 @@ public static class TickOffset
     /// Offsets one roll. Called for every roll the simulation makes, so it stays branch-light
     /// and allocation-free.
     /// </summary>
+    [InlineIntoPostfix]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Apply(int roll, int tick)
     {
-        return RNGTickConfig.Mode switch
-        {
-            OffsetMode.Off => roll,
-            OffsetMode.Tick => Wrap((long)roll + tick),
-            _ => Wrap((long)roll + tick + Mix(tick >> 8)),
-        };
+        if (RNGTickConfig.Mode == OffsetMode.Off)
+            return roll;
+
+        long sum = (long)roll + tick;
+        if (RNGTickConfig.Mode != OffsetMode.Tick)
+            sum += Mix(tick >> 8);
+
+        return Wrap(sum);
     }
 
     /// <summary>
@@ -155,6 +158,7 @@ public static class TickOffset
     /// value: done in <c>int</c>, a roll near <c>int.MaxValue</c> plus a large tick would
     /// overflow to a negative number first, and the modulo would then preserve the sign.
     /// </summary>
+    [Inlinable]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Wrap(long sum)
     {
@@ -173,6 +177,7 @@ public static class TickOffset
     /// change in the low bit of the input changes roughly half the output bits, which is the
     /// property the cycle term needs.
     /// </summary>
+    [Inlinable]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Mix(int input)
     {

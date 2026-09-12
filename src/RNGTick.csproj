@@ -29,6 +29,25 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The generator runs inside the compiler, so it is referenced as an analyzer and its own
+         assembly is never shipped. ReferenceOutputAssembly=false is what keeps it out of the mod. -->
+    <ProjectReference Include="../gen/RNGTick.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Write the generated sources next to the build so a diff can show what was produced. -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Written for inspection, compiled from memory. Without this the SDK's **/*.cs glob would
+         also compile them off disk and every generated type would be defined twice. -->
+    <Compile Remove="generated/**/*.cs" />
+  </ItemGroup>
+
   <Import Project="../ModZip.targets" />
 
 </Project>
