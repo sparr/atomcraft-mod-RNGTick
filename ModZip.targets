@@ -15,6 +15,7 @@
     <MakeDir Directories="$(StageDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(StageDir)" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)/mod.json" DestinationFolder="$(StageDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../LICENSE" DestinationFolder="$(StageDir)" />
     <Delete Files="$(ZipPath)" />
     <ZipDirectory SourceDirectory="$(StageRoot)" DestinationFile="$(ZipPath)" />
     <Message Importance="high" Text="mod zip: $(ZipPath)" />

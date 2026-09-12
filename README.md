@@ -219,6 +219,37 @@ One test does compare against stock, and is the only one that can be inapplicabl
 mod that is not reaching `RNG.Roll` from one that is. If `RNGVolume` is gone the game has changed
 its RNG rather than had it patched, and it says so and passes.
 
+### Running it against something else
+
+`RNGConformance.zip` from the [releases](https://github.com/sparr/atomcraft-mod-RNGTick/releases)
+is self-contained and needs none of this repository. Alongside it you need a game patched with
+[GodotMonoModLoader](https://github.com/sacroimper/GodotMonoModLoader) and
+[TestHarness.zip](https://github.com/sparr/atomcraft-mod-TestHarness/releases), which is what
+discovers and runs the tests.
+
+Put all three in `<user data>/Mods/`, still zipped, plus whatever you are judging:
+
+```
+Mods/
+  TestHarness.zip
+  RNGConformance.zip
+  SomeCandidateFix.zip      # or nothing, to see the stock game fail
+```
+
+Then launch the game with the loader and the test runner:
+
+```sh
+AtomCraft.exe -s GodotMonoModLoader.gd --headless -- --atomtest-run --atomtest-filter='^RNGConformance\.'
+```
+
+Results land in `user://logs/godot.log`: one `##ATOMTEST##` JSON line per test, and a
+human-readable `[conformance]` line per measurement giving the mean, the spread, how many times
+the sampling floor that is, and how many positions never produced the outcome at all. The exit
+code is the suite's, so it works in CI.
+
+Six tests. Against the stock game three fail on spread and one on nothing reaching `RNG.Roll`;
+the two that pass are determinism and range, which stock does not get wrong.
+
 ## A note on the game, found along the way
 
 `RollLowerThanChanceOutOf1024_TimeOnly` is
