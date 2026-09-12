@@ -57,3 +57,21 @@ Needs [GodotMonoModLoader](https://github.com/sacroimper/GodotMonoModLoader). Dr
 `build/RNGTick.zip` into `<user data>/Mods/`, still zipped. The mod ships no materials, reactions
 or translations -- one class and one postfix -- so there is nothing to configure and nothing to
 uninstall beyond deleting the zip.
+
+## Building and testing
+
+```sh
+./build.sh              # mod and tests
+./run-tests.sh          # run the suite
+```
+
+Tests use the [TestHarness](https://github.com/sparr/atomcraft-mod-TestHarness) and run inside the real game, headless. They ask
+`Atomcraft.RNG` for rolls rather than reimplementing the lookup: a test that computed its own
+expected values would pass against a mod that patched nothing.
+
+That is the failure worth guarding. Both `Roll` overloads carry `AggressiveInlining`, and a
+Harmony detour on such a method is defeated by any caller compiled with the original body pasted
+in -- silently, with the patch still reporting itself installed. So every check that can go
+through one of the game's own wrappers (`RollPct`, `RollFloat`, `RandomDeterministic`) does, and
+compares the wrapper's answer against the patched `Roll` rather than against a number the test
+computed.

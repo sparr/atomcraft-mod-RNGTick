@@ -8,27 +8,9 @@
     <RootNamespace>RNGTick</RootNamespace>
     <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <ModId>RNGTick</ModId>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
-
-  <!-- Where the game is installed. No default is right for everyone: installs differ by store,
-       platform, and user. Pass -p:GameInstallDir=... or let the discovery below find a Steam
-       install, which is also what makes an editor's design-time build work, since that supplies
-       neither an environment nor a command line. -->
-  <PropertyGroup Condition="'$(GameInstallDir)' == ''">
-    <_Candidate>$(HOME)/Games/Steam/steamapps/common/Atomcraft</_Candidate>
-    <GameInstallDir Condition="Exists('$(_Candidate)/data_Atomcraft_windows_x86_64/Atomcraft.dll')">$(_Candidate)</GameInstallDir>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <GameDataDir>$(GameInstallDir)/data_Atomcraft_windows_x86_64</GameDataDir>
-  </PropertyGroup>
-
-  <Target Name="RequireGameInstallDir" BeforeTargets="ResolveAssemblyReferences">
-    <Error Condition="!Exists('$(GameDataDir)/Atomcraft.dll')"
-           Text="No Atomcraft.dll under '$(GameDataDir)'. Pass -p:GameInstallDir=/path/to/Atomcraft." />
-  </Target>
 
   <ItemGroup>
     <!-- Never copy game assemblies next to the mod DLL. -->
