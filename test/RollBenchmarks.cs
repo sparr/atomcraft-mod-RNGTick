@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Reflection;
 using System.Diagnostics;
 using Atomcraft;
@@ -225,6 +226,39 @@ public static class RollBenchmarks
     }
 
     /// <summary>
+    /// The flat body again, but guarded through <c>Volatile.Read</c> rather than a plain field
+    /// read -- the workaround the woven build needs, isolated from everything else it changes.
+    /// </summary>
+    public static void MinimalWithVolatileGuardAfterRoll(int tick, ref int __result)
+    {
+        if (!Volatile.Read(ref RNG.IsInitialized))
+            return;
+
+        unchecked
+        {
+            long sum;
+            switch (RNGTickConfig.Mode)
+            {
+                case OffsetMode.Off:
+                    return;
+                case OffsetMode.Tick:
+                    sum = (long)__result + tick;
+                    break;
+                default:
+                    var cycle = tick >> 8;
+                    cycle = ((cycle >> 16) ^ cycle) * 73244475;
+                    cycle = ((cycle >> 16) ^ cycle) * 73244475;
+                    cycle = (cycle >> 16) ^ cycle;
+                    sum = (long)__result + tick + cycle;
+                    break;
+            }
+
+            sum %= int.MaxValue;
+            __result = (int)(sum < 0 ? sum + int.MaxValue : sum);
+        }
+    }
+
+    /// <summary>
     /// The shipped mod's structure, rebuilt inside this assembly.
     ///
     /// <para>The control the first measurement lacked. Every fast variant above lives in
@@ -365,6 +399,11 @@ public static class RollBenchmarks
             AccessTools.Method(typeof(RollBenchmarks), nameof(MinimalWithModeAfterRoll)),
             () => Rolls.With(OffsetMode.TickAndCycle, () => NanosPerRoll(SweepViaRoll)));
 
+        // The same flat body with only the guard changed, to price the workaround on its own.
+        var volatileGuard = InsteadOfThePostfix(
+            AccessTools.Method(typeof(RollBenchmarks), nameof(MinimalWithVolatileGuardAfterRoll)),
+            () => Rolls.With(OffsetMode.TickAndCycle, () => NanosPerRoll(SweepViaRoll)));
+
         // And the shipped structure recompiled here, to tell call depth from assembly boundary.
         var layered = InsteadOfThePostfix(
             AccessTools.Method(typeof(RollBenchmarks), nameof(LayeredAfterRoll)),
@@ -380,7 +419,8 @@ public static class RollBenchmarks
             (int[])AccessTools.Field(typeof(RNG), "RNGVolume").GetValue(null)!));
 
         Log.Info($"ns per roll: inlined lookup {bare:F2} | minimal {minimal:F2} | " +
-                 $"minimal+mode {withMode:F2} | two levels {twoLevel:F2} | " +
+                 $"minimal+mode {withMode:F2} | minimal+mode+volatile {volatileGuard:F2} | " +
+                 $"two levels {twoLevel:F2} | " +
                  $"three levels, this assembly {layered:F2} | shipped {full:F2}");
         Log.Info($"structure vs boundary: rebuilding the shipped shape locally costs " +
                  $"{layered - withMode:F2} ns over the flat version, leaving {full - layered:F2} ns " +
