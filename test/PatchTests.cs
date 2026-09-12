@@ -1,3 +1,4 @@
+using System.Reflection;
 using Atomcraft;
 using Atomcraft.TestHarness;
 using Godot;
@@ -48,6 +49,69 @@ public static class PatchTests
             if (!mine)
                 throw new AssertionException($"RNG.{label} carries no postfix owned by {RNGTick.ModEntry.ModId}");
         }
+    }
+
+    /// <summary>
+    /// And nothing else on <c>RNG</c> is patched by this mod.
+    ///
+    /// <para>The targets are discovered by name rather than listed, which is what keeps a new
+    /// overload from being missed -- and is also the only way this mod could ever reach further
+    /// than it means to. Patching a wrapper such as <c>RollPct</c> as well as <c>Roll</c> would
+    /// apply the offset twice and be invisible in every other test here, since both would still
+    /// agree with each other.</para>
+    /// </summary>
+    [GameTest]
+    public static void NothingElseOnTheRngIsPatchedByThisMod()
+    {
+        var overreach = AccessTools.GetDeclaredMethods(typeof(RNG))
+            .Where(m => Harmony.GetPatchInfo(m)?.Postfixes.Any(p => p.owner == RNGTick.ModEntry.ModId) ?? false)
+            .Where(m => m.Name != RNGPatches.TargetName)
+            .Select(m => m.Name)
+            .ToList();
+
+        if (overreach.Count > 0)
+            throw new AssertionException(
+                $"this mod patched {string.Join(", ", overreach)} as well as {RNGPatches.TargetName}. " +
+                "A wrapper patched alongside the method it wraps applies the offset twice.");
+
+        var found = RNGPatches.TargetMethods().Count();
+        if (found != RNGPatches.KnownTargetCount)
+            throw new AssertionException(
+                $"discovery found {found} method(s) named {RNGPatches.TargetName}, not " +
+                $"{RNGPatches.KnownTargetCount}. That is not necessarily wrong -- the mod patches " +
+                "whatever it finds -- but it means the game's RNG changed and this suite's " +
+                "assumptions deserve a second look.");
+    }
+
+    /// <summary>
+    /// The game still names its parameter what this mod reads it by.
+    ///
+    /// <para>Harmony binds a postfix's parameters to the original's by name, so this mod depends
+    /// on <c>RNG.Roll</c> calling its third argument <c>tick</c> -- a thing a game update could
+    /// change without anyone thinking twice. <c>RequireBindableTargets</c> exists to turn that
+    /// into a sentence instead of a Harmony stack trace, and this checks both that it passes
+    /// today and that it is looking at the right thing.</para>
+    /// </summary>
+    [GameTest]
+    public static void TheGameStillNamesItsTickParameterTick()
+    {
+        // Independently of the mod's own helper, so the two cannot be wrong together.
+        foreach (var target in RNGPatches.TargetMethods())
+        {
+            var tick = target.GetParameters().SingleOrDefault(p => p.Name == "tick");
+            if (tick == null)
+                throw new AssertionException(
+                    $"RNG.Roll({string.Join(", ", target.GetParameters().Select(p => p.Name))}) has " +
+                    "no parameter named 'tick'; the postfix cannot bind and the mod will refuse to load");
+            if (tick.ParameterType != typeof(int))
+                throw new AssertionException($"RNG.Roll's 'tick' is {tick.ParameterType.Name}, not int");
+            if (((MethodInfo)target).ReturnType != typeof(int))
+                throw new AssertionException("RNG.Roll no longer returns int, so 'ref int __result' cannot bind");
+        }
+
+        // And the mod's own check agrees. It runs at load, so reaching this test at all already
+        // means it passed; calling it again is what makes the failure legible if it ever does not.
+        RNGPatches.RequireBindableTargets();
     }
 
     /// <summary>

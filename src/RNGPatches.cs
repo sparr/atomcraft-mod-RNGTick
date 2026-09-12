@@ -49,8 +49,68 @@ public static class RNGPatches
     /// <summary>The name this mod patches, in one place rather than spelled into an attribute.</summary>
     public const string TargetName = nameof(RNG.Roll);
 
+    /// <summary>
+    /// How many overloads the mod was written against. Used only to notice that the number
+    /// changed, never to require it: a game update that <i>adds</i> an overload is handled
+    /// correctly by the discovery above, and failing to start over it would be a false alarm.
+    /// One that removes or renames them is the real failure, and it is silent without a check.
+    /// </summary>
+    public const int KnownTargetCount = 2;
+
     public static IEnumerable<MethodBase> TargetMethods() =>
         AccessTools.GetDeclaredMethods(typeof(RNG)).Where(m => m.Name == TargetName);
+
+    /// <summary>
+    /// Checks the targets can still be bound, before Harmony tries and fails at it.
+    ///
+    /// <para>Harmony matches a postfix's parameters to the original's <b>by name</b>, which is
+    /// what lets one postfix serve both overloads even though <c>tick</c> is the second parameter
+    /// of one and the third of the other. It also means this mod depends on the game's parameter
+    /// <i>name</i> -- a thing most developers would rename without a thought, and which a
+    /// decompiler will happily show you long after it stopped being true.</para>
+    ///
+    /// <para>Without this, a rename surfaces as a Harmony exception naming a parameter, thrown
+    /// from inside <c>PatchAll</c>, which takes the mod down and the test mod that depends on it
+    /// with it -- so the visible symptom is a module that never loaded rather than anything
+    /// pointing at the game. One sentence is worth more than that.</para>
+    /// </summary>
+    public static void RequireBindableTargets()
+    {
+        var targets = TargetMethods().ToList();
+
+        if (targets.Count == 0)
+            throw new InvalidOperationException(
+                $"{nameof(RNG)}.{TargetName} does not exist. A game update renamed or removed it, " +
+                "and this mod has nothing to patch.");
+
+        foreach (var target in targets)
+        {
+            if (target is not MethodInfo method || method.ReturnType != typeof(int))
+                throw new InvalidOperationException(
+                    $"{nameof(RNG)}.{TargetName}({Signature(target)}) no longer returns int, so the " +
+                    "postfix cannot take it as 'ref int __result'. A game update changed the RNG.");
+
+            var tick = target.GetParameters().FirstOrDefault(p => p.Name == TickParameter);
+            if (tick == null)
+                throw new InvalidOperationException(
+                    $"{nameof(RNG)}.{TargetName}({Signature(target)}) has no parameter named " +
+                    $"'{TickParameter}'. Harmony binds postfix parameters by name, so a game update " +
+                    "that renamed it leaves this mod unable to see the tick. Rename the postfix's " +
+                    "parameter to match.");
+
+            if (tick.ParameterType != typeof(int))
+                throw new InvalidOperationException(
+                    $"{nameof(RNG)}.{TargetName}({Signature(target)}) has '{TickParameter}' as " +
+                    $"{tick.ParameterType.Name} rather than int, and Harmony matches on type as well " +
+                    "as name.");
+        }
+    }
+
+    /// <summary>The parameter this mod reads the tick from, by name. See RequireBindableTargets.</summary>
+    public const string TickParameter = "tick";
+
+    private static string Signature(MethodBase method) =>
+        string.Join(", ", method.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
 
     [HarmonyPostfix]
     public static void AfterRoll(int tick, ref int __result)
