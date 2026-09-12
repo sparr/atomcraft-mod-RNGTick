@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>RNGTick</AssemblyName>
+    <RootNamespace>RNGTick</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!-- Where the game is installed. No default is right for everyone: installs differ by store,
+       platform, and user. Pass -p:GameInstallDir=... or let the discovery below find a Steam
+       install, which is also what makes an editor's design-time build work, since that supplies
+       neither an environment nor a command line. -->
+  <PropertyGroup Condition="'$(GameInstallDir)' == ''">
+    <_Candidate>$(HOME)/Games/Steam/steamapps/common/Atomcraft</_Candidate>
+    <GameInstallDir Condition="Exists('$(_Candidate)/data_Atomcraft_windows_x86_64/Atomcraft.dll')">$(_Candidate)</GameInstallDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDataDir>$(GameInstallDir)/data_Atomcraft_windows_x86_64</GameDataDir>
+  </PropertyGroup>
+
+  <Target Name="RequireGameInstallDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(GameDataDir)/Atomcraft.dll')"
+           Text="No Atomcraft.dll under '$(GameDataDir)'. Pass -p:GameInstallDir=/path/to/Atomcraft." />
+  </Target>
+
+  <ItemGroup>
+    <!-- Never copy game assemblies next to the mod DLL. -->
+    <Reference Include="Atomcraft">
+      <HintPath>$(GameDataDir)/Atomcraft.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(GameDataDir)/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Harmony is bundled by the mod loader; never ship 0Harmony.dll. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <ModId>RNGTick</ModId>
+  </PropertyGroup>
+
+  <!-- The loader requires every file of a mod to sit inside a top-level folder named exactly the
+       mod id, so staging and zipping is a build step rather than something to do by hand. -->
+  <Target Name="CreateModZip" AfterTargets="Build">
+    <PropertyGroup>
+      <StageRoot>$(MSBuildProjectDirectory)/../build/stage/$(ModId)</StageRoot>
+      <StageDir>$(StageRoot)/$(ModId)</StageDir>
+      <ZipPath>$(MSBuildProjectDirectory)/../build/$(ModId).zip</ZipPath>
+    </PropertyGroup>
+    <RemoveDir Directories="$(StageRoot)" />
+    <MakeDir Directories="$(StageDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(StageDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/mod.json" DestinationFolder="$(StageDir)" />
+    <Delete Files="$(ZipPath)" />
+    <ZipDirectory SourceDirectory="$(StageRoot)" DestinationFile="$(ZipPath)" />
+    <Message Importance="high" Text="mod zip: $(ZipPath)" />
+  </Target>
+
+  <Target Name="InstallModZip" AfterTargets="CreateModZip" Condition="'$(TestInstallDir)' != '' AND Exists('$(TestInstallDir)')">
+    <MakeDir Directories="$(TestInstallDir)/Mods" />
+    <Copy SourceFiles="$(ZipPath)" DestinationFolder="$(TestInstallDir)/Mods" />
+  </Target>
+
+</Project>
