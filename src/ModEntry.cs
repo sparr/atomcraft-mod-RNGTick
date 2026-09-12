@@ -24,6 +24,10 @@ public static class ModEntry
     {
         // Before PatchAll rather than after: this is the check that turns a game update into a
         // sentence, and PatchAll is what would otherwise throw first and less helpfully.
+        // See RNGTickConfig.Mode: it carries no field initializer, so this is what puts it in
+        // its default state.
+        RNGTickConfig.Reset();
+
         RNGPatches.RequireBindableTargets();
 
         _harmony = new Harmony(ModId);

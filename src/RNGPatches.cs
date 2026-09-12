@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Threading;
 using Atomcraft;
 using HarmonyLib;
 
@@ -120,7 +121,22 @@ public static class RNGPatches
         // offset applied to it would be inventing randomness rather than redistributing it.
         // RNG.Init is called when a session starts, not from Game._Ready, so this window is real
         // and lasts from launch until the player enters a world.
-        if (!RNG.IsInitialized)
+        // Volatile.Read, not a plain read, and not for any threading reason.
+        //
+        // InlineMethod.Fody constant-folds a static field into a branch condition when the
+        // field's declaring type assigns it a literal in its static constructor -- which
+        // Atomcraft.RNG does, `IsInitialized = false`. The weaver concludes this guard is always
+        // taken and deletes everything after it, leaving a postfix whose entire body is
+        // `nop; ret`. It does this silently: the build succeeds and the mod loads, reports itself
+        // patched, and offsets nothing.
+        //
+        // Volatile.Read compiles to a call in IL, which the weaver does not fold, and which the
+        // JIT turns back into a plain mov on x86-64 where an acquire load is free. Reading into a
+        // local first does not help; the fold follows the field, not the syntax.
+        //
+        // Reported upstream. If it is fixed, this can become `if (!RNG.IsInitialized)` again --
+        // and RollBenchmarks will tell you whether it cost anything.
+        if (!Volatile.Read(ref RNG.IsInitialized))
             return;
 
         __result = TickOffset.Apply(__result, tick);

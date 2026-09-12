@@ -21,7 +21,14 @@ public static class RNGTickConfig
     /// positions without shrinking it, for the reason spelled out on <see cref="TickOffset"/>.
     /// The default adds a second term that reaches those too.</para>
     /// </summary>
-    public static OffsetMode Mode = Default;
+    /// <summary>
+    /// Deliberately not initialized here. A field initializer becomes a constant stsfld in this
+    /// type's static constructor, and InlineMethod.Fody folds exactly that into any branch
+    /// testing the field -- which is every branch in TickOffset.Apply. The mode would be frozen
+    /// at whatever this line said and Off and Tick would stop working. ModEntry.Initialize calls
+    /// Reset instead.
+    /// </summary>
+    public static OffsetMode Mode;
 
     public const OffsetMode Default = OffsetMode.TickAndCycle;
 
