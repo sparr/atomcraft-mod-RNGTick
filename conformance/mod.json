@@ -1,0 +1,15 @@
+{
+  "id": "RNGConformance",
+  "name": "RNG Conformance Tests",
+  "description": "Checks Atomcraft's deterministic RNG behaves like a probability rather than a property of the address. Names no mod: point it at any mod claiming to fix this, or at a game that claims to have fixed it. Install only when running the test harness.",
+  "author": "sparr",
+  "version": "0.1.0",
+  "modules": [
+    {
+      "moduleId": "RNGConformance/Main",
+      "dll": "RNGConformance.dll",
+      "initClass": "RNGConformance.ModEntry",
+      "dependencies": ["TestHarness/Main"]
+    }
+  ]
+}

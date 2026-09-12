@@ -19,10 +19,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Everything this mod's tests are named under. The harness matches --atomtest-filter as an
-# unanchored regex over the assembly-qualified test name, so anchoring keeps it from also
-# selecting a harness test that happens to mention the mod.
-MINE='^RNGTick\.'
+# This project's own tests: the mod's suite, and the conformance suite that names no mod. The
+# harness matches --atomtest-filter as an unanchored regex over the assembly-qualified test name,
+# so anchoring keeps it from also selecting a harness test that happens to mention the mod.
+MINE='^(RNGTick|RNGConformance)\.'
 
 ARGS=(); ALL=0; HAS_FILTER=0; HAS_SEPARATOR=0
 for arg in "$@"; do

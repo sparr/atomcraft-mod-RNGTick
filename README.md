@@ -173,9 +173,9 @@ uninstall beyond deleting the zip.
 ## Building and testing
 
 ```sh
-./build.sh              # mod and tests
-./run-tests.sh          # this mod's tests. About 40 seconds. The everyday loop.
-./run-tests.sh --all    # plus the harness's own suite. Before calling anything done.
+./build.sh              # mod, tests, conformance suite
+./run-tests.sh          # this project's tests. About 40 seconds. The everyday loop.
+./run-tests.sh --all    # plus the harness's own suite. About 2m45. Before calling anything done.
 ```
 
 Tests use the [TestHarness](https://github.com/sparr/atomcraft-mod-TestHarness) and run inside the real game, headless. They ask
@@ -190,8 +190,34 @@ compares the wrapper's answer against the patched `Roll` rather than against a n
 computed.
 
 **Run `--all` before calling anything done.** Every test here is a region test that never starts a
-session, so the harness's session tests exercise nothing in this mod and cost most of a full run
--- but this project patches `RNG.Roll` underneath them, which is how it broke one of them once.
+session, so the harness's session tests exercise nothing in this mod and cost about 120 of the 137
+seconds -- but this project patches `RNG.Roll` underneath them, which is how it broke one of them
+once.
+
+## The conformance suite
+
+`conformance/` is a separate mod that names none of this one: no project reference, no mention in
+its `mod.json`, which depends only on the harness. Install it beside any candidate fix and it
+reaches a verdict; install it alone and it fails, because stock Atomcraft does not pass.
+
+Its assertions are **absolute** rather than diffs against stock, so it stays valid against a
+version of the game that fixes this itself -- there is no stock to compare against once the stock
+is the thing being judged. A fair generator still leaves a spread of `sqrt(p(1-p)/n)` between
+positions and no fix can beat that, so each test asks for a spread within three times that floor.
+The two cases are nowhere near each other:
+
+| | stock | with this mod |
+| --- | --- | --- |
+| reaction at `Probability 240` | 13.3x the floor, 49 of 144 positions dead | 1.0x, none dead |
+| `RollPct` at 5 in 128 | 10.5x | 0.9x |
+| coin flip | 10.7x | 0.8x |
+
+`RollPct` is tested separately on purpose: 128 divides 256, so a fix that only adds the tick
+passes the reaction test and fails that one.
+
+One test does compare against stock, and is the only one that can be inapplicable -- it tells a
+mod that is not reaching `RNG.Roll` from one that is. If `RNGVolume` is gone the game has changed
+its RNG rather than had it patched, and it says so and passes.
 
 ## A note on the game, found along the way
 

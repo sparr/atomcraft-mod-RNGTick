@@ -44,7 +44,7 @@ cat > "$OFFLINE_CONFIG" <<'XML'
 </configuration>
 XML
 
-for project in src/RNGTick.csproj test/RNGTick.Test.csproj; do
+for project in src/RNGTick.csproj test/RNGTick.Test.csproj conformance/RNGConformance.csproj; do
     echo "==> $project"
     nice -n 19 dotnet restore "$project" --configfile "$OFFLINE_CONFIG" -p:Configuration="$CONFIG" "${ARGS[@]}" >/dev/null
     nice -n 19 dotnet build "$project" --no-restore -v q --nologo -c "$CONFIG" "${ARGS[@]}"
