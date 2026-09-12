@@ -9,6 +9,7 @@
     <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ModId>RNGTick</ModId>
   </PropertyGroup>
 
   <!-- Where the game is installed. No default is right for everyone: installs differ by store,
@@ -46,30 +47,6 @@
     </PackageReference>
   </ItemGroup>
 
-  <PropertyGroup>
-    <ModId>RNGTick</ModId>
-  </PropertyGroup>
-
-  <!-- The loader requires every file of a mod to sit inside a top-level folder named exactly the
-       mod id, so staging and zipping is a build step rather than something to do by hand. -->
-  <Target Name="CreateModZip" AfterTargets="Build">
-    <PropertyGroup>
-      <StageRoot>$(MSBuildProjectDirectory)/../build/stage/$(ModId)</StageRoot>
-      <StageDir>$(StageRoot)/$(ModId)</StageDir>
-      <ZipPath>$(MSBuildProjectDirectory)/../build/$(ModId).zip</ZipPath>
-    </PropertyGroup>
-    <RemoveDir Directories="$(StageRoot)" />
-    <MakeDir Directories="$(StageDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(StageDir)" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)/mod.json" DestinationFolder="$(StageDir)" />
-    <Delete Files="$(ZipPath)" />
-    <ZipDirectory SourceDirectory="$(StageRoot)" DestinationFile="$(ZipPath)" />
-    <Message Importance="high" Text="mod zip: $(ZipPath)" />
-  </Target>
-
-  <Target Name="InstallModZip" AfterTargets="CreateModZip" Condition="'$(TestInstallDir)' != '' AND Exists('$(TestInstallDir)')">
-    <MakeDir Directories="$(TestInstallDir)/Mods" />
-    <Copy SourceFiles="$(ZipPath)" DestinationFolder="$(TestInstallDir)/Mods" />
-  </Target>
+  <Import Project="../ModZip.targets" />
 
 </Project>
