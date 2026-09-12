@@ -75,7 +75,15 @@ public sealed class InlineGenerator : IIncrementalGenerator
             return;
         }
 
-        var inliner = new Inliner(bodies, spc);
+        // Names already spoken for in the method the body is moving into. New locals avoid these
+        // rather than being given unreadable unique prefixes.
+        var inScope = new HashSet<string> { "__result", "tick" };
+        foreach (var parameter in apply.ParameterList.Parameters)
+            inScope.Add(parameter.Identifier.ValueText);
+        foreach (var declarator in apply.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+            inScope.Add(declarator.Identifier.ValueText);
+
+        var inliner = new Inliner(bodies, spc, inScope);
         var flattened = inliner.Flatten(apply.Body);
         if (inliner.Failed)
             return;
@@ -140,14 +148,33 @@ public sealed class InlineGenerator : IIncrementalGenerator
     {
         private readonly Dictionary<string, MethodDeclarationSyntax> _bodies;
         private readonly SourceProductionContext _spc;
-        private int _temp;
+        private readonly HashSet<string> _inScope;
 
         public bool Failed { get; private set; }
 
-        public Inliner(Dictionary<string, MethodDeclarationSyntax> bodies, SourceProductionContext spc)
+        public Inliner(Dictionary<string, MethodDeclarationSyntax> bodies, SourceProductionContext spc,
+            HashSet<string> inScope)
         {
             _bodies = bodies;
             _spc = spc;
+            _inScope = inScope;
+        }
+
+        /// <summary>
+        /// The callee's own name for something, kept unless it is already taken here.
+        ///
+        /// <para>Generated code gets read, most often when something has gone wrong with it, and
+        /// <c>input</c> and <c>sum2</c> say what they hold where <c>__inl0_input</c> only says
+        /// where it came from. Uniqueness still has to be guaranteed -- two calls to the same
+        /// method, or a callee parameter sharing a name with a caller local -- so a digit is
+        /// appended only when there is an actual collision.</para>
+        /// </summary>
+        private string Unique(string preferred)
+        {
+            var name = preferred;
+            for (var n = 2; !_inScope.Add(name); n++)
+                name = preferred + n;
+            return name;
         }
 
         public BlockSyntax Flatten(BlockSyntax block)
@@ -196,7 +223,9 @@ public sealed class InlineGenerator : IIncrementalGenerator
                 changed = true;
                 var name = NameOf(call)!;
                 var callee = _bodies[name];
-                var slot = $"__inl{_temp++}";
+
+                // The slot holding what the call returned takes the callee's name: `mix`, `wrap`.
+                var slot = Unique(char.ToLowerInvariant(name[0]) + name.Substring(1));
 
                 var arguments = call.ArgumentList.Arguments;
                 if (arguments.Count != callee.ParameterList.Parameters.Count)
@@ -210,7 +239,7 @@ public sealed class InlineGenerator : IIncrementalGenerator
                 for (var i = 0; i < arguments.Count; i++)
                 {
                     var parameter = callee.ParameterList.Parameters[i];
-                    var local = $"{slot}_{parameter.Identifier.ValueText}";
+                    var local = Unique(parameter.Identifier.ValueText);
                     renames[parameter.Identifier.ValueText] = local;
                     prelude.Add(SyntaxFactory.ParseStatement(
                         $"{parameter.Type} {local} = {arguments[i].Expression};"));

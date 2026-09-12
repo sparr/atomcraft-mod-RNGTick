@@ -30,27 +30,27 @@ partial class RNGPatches
         long sum = (long)roll + tick;
         if (RNGTickConfig.Mode != OffsetMode.Tick)
         {
-            int __inl0_input = tick >> 8;
-            int __inl0;
+            int input = tick >> 8;
+            int mix;
             unchecked
             {
-                __inl0_input = ((__inl0_input >> 16) ^ __inl0_input) * 73244475;
-                __inl0_input = ((__inl0_input >> 16) ^ __inl0_input) * 73244475;
-                __inl0 = (__inl0_input >> 16) ^ __inl0_input;
+                input = ((input >> 16) ^ input) * 73244475;
+                input = ((input >> 16) ^ input) * 73244475;
+                mix = (input >> 16) ^ input;
             }
         
-            sum += __inl0;
+            sum += mix;
         }
-        long __inl1_sum = sum;
-        int __inl1;
-        __inl1_sum %= TickOffset.Range;
-        if (__inl1_sum < 0)
+        long sum2 = sum;
+        int wrap;
+        sum2 %= TickOffset.Range;
+        if (sum2 < 0)
         {
-            __inl1_sum += TickOffset.Range;
+            sum2 += TickOffset.Range;
         }
-        __inl1 = (int)__inl1_sum;
+        wrap = (int)sum2;
         {
-            __result = __inl1;
+            __result = wrap;
             return;
         }
     }
