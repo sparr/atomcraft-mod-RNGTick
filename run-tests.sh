@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Build both mods and run the suite against a test root private to this project.
 #
-#   ./run-tests.sh [extra args passed through to the harness]
+#   ./run-tests.sh                 this mod's tests only. The everyday loop.
+#   ./run-tests.sh --all           plus the harness's own suite. Before a commit or a release,
+#                                  or whenever this project has changed anything under
+#                                  ../Testing, which it has.
+#   ./run-tests.sh -- --atomtest-filter=Bias      an explicit filter wins over both
+#
+# Why the default is narrow: the harness's own suite is 15 session tests that each generate,
+# save, and reload a 6144x6144 world, and it accounts for about a hundred of the two minutes a
+# full run takes. None of it exercises this mod -- every test here is a region test that never
+# starts a session -- so paying for it on every edit buys nothing. It still has to run before
+# anything is called done, because this project patches the game underneath it.
 #
 # The harness's own run-tests.sh defaults to a shared test root. Sharing it means one
 # project's mod zips and results land where another project is also running, so a failure
@@ -9,6 +19,28 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Everything this mod's tests are named under. The harness matches --atomtest-filter as an
+# unanchored regex over the assembly-qualified test name, so anchoring keeps it from also
+# selecting a harness test that happens to mention the mod.
+MINE='^RNGTick\.'
+
+ARGS=(); ALL=0; HAS_FILTER=0; HAS_SEPARATOR=0
+for arg in "$@"; do
+    case "$arg" in
+        --all)                  ALL=1 ;;
+        --atomtest-filter=*)    HAS_FILTER=1; ARGS+=("$arg") ;;
+        --)                     HAS_SEPARATOR=1; ARGS+=("$arg") ;;
+        *)                      ARGS+=("$arg") ;;
+    esac
+done
+
+if [ "$ALL" = 0 ] && [ "$HAS_FILTER" = 0 ]; then
+    # Everything after the harness's own -- goes to the game, and a second -- would be passed
+    # along as a game argument rather than starting a new group, so append into the existing one.
+    [ "$HAS_SEPARATOR" = 1 ] || ARGS+=(--)
+    ARGS+=("--atomtest-filter=$MINE")
+    echo "==> running this mod's tests only; ./run-tests.sh --all for the harness suite too"
+fi
 
 export TEST_ROOT="${TEST_ROOT:-$HOME/.cache/atomcraft-test-rngtick}"
 HARNESS="${HARNESS:-../Testing}"
@@ -44,4 +76,4 @@ unzip -o -j "$HARNESS/build/TestHarness.zip" 'TestHarness/Atomcraft.TestHarness.
     -d "$TEST_ROOT/harness" >/dev/null
 
 ./build.sh --install
-exec "$HARNESS/run-tests.sh" "$@"
+exec "$HARNESS/run-tests.sh" ${ARGS[@]+"${ARGS[@]}"}

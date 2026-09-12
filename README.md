@@ -86,7 +86,8 @@ uninstall beyond deleting the zip.
 
 ```sh
 ./build.sh              # mod and tests
-./run-tests.sh          # run the suite
+./run-tests.sh          # this mod's tests. About 40 seconds. The everyday loop.
+./run-tests.sh --all    # plus the harness's own suite. Before calling anything done.
 ```
 
 Tests use the [TestHarness](https://github.com/sparr/atomcraft-mod-TestHarness) and run inside the real game, headless. They ask
@@ -99,3 +100,7 @@ in -- silently, with the patch still reporting itself installed. So every check 
 through one of the game's own wrappers (`RollPct`, `RollFloat`, `RandomDeterministic`) does, and
 compares the wrapper's answer against the patched `Roll` rather than against a number the test
 computed.
+
+**Run `--all` before calling anything done.** Every test here is a region test that never starts a
+session, so the harness's session tests exercise nothing in this mod and cost most of a full run
+-- but this project patches `RNG.Roll` underneath them, which is how it broke one of them once.
