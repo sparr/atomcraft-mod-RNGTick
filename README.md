@@ -51,6 +51,94 @@ not a corner case -- `RNG.RollPct` is `Roll(..) & 0x7F`, 58 call sites against 3
 directly. `TickAndCycle` adds a hash of the cycle number, which is exactly the information the
 lookup index throws away. The hash is the game's own, from `Simulation.PRNG`.
 
+## What it fixes, and what it cannot
+
+A position's rate is wrong for two separable reasons.
+
+**Systematic bias** -- its 256 values are drawn from a distribution that is not uniform mod `m`.
+Adding the tick removes this entirely, whatever shape it takes: over a 256-tick cycle the offset
+visits every residue exactly twice, so the outcome is the position's own distribution convolved
+with a uniform one. A position holding one value 256 times has a single outcome in vanilla and
+sweeps every residue once offset; one confined to 0-63 fires low checks at exactly twice their
+rate and comes back to nominal.
+
+**Sampling noise** -- 256 samples is not many. Nothing about adding the tick touches this, and for
+a modulus dividing 256 the outcome period stays 256 however long the world runs.
+
+The shipped volume has only the second. Its spread matches `sqrt(p(1-p)/256)` to within a couple
+of percent, which is the signature of pure 256-sample noise and leaves no room for a systematic
+component -- unsurprising, since the volume is `new Random(12345)` output and already independent
+of the index. So on a power-of-two modulus the tick alone relocates the noise rather than reducing
+it: across 4096 positions, vanilla and `Tick` rates correlate at -0.005 and the worst position is
+identical in both.
+
+**The one precondition** is that a position's values not depend on the index selecting them.
+`V[i] = i % 64` leaves 64 residues unreachable in vanilla and *still* leaves exactly 64 after the
+offset, while collapsing a fair coin flip to always-heads. Nothing in the shipped volume looks
+like that, but the assumption is load-bearing, so it is exercised rather than asserted in prose.
+
+## How long it takes to work
+
+`tick >> 8` is constant inside a 256-tick cycle, so the cycle term contributes one fixed rotation
+there: the same histogram, relabelled. Measured over single cycles the spread is 0.98x to 1.10x
+vanilla's. **Inside one cycle this mod does nothing.**
+
+That is a floor, not a shortfall -- a position has 256 values available to it in 256 ticks, so
+nothing can make it behave like more. The cycle term's only job is to make successive cycles
+differ so counts accumulate:
+
+| cycles | game time at 60 tps | vanilla | `TickAndCycle` | ideal for that many samples |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.3 s | 0.01219 | 0.01213 | 0.01211 |
+| 2 | 8.5 s | 0.01219 | 0.00839 | 0.00856 |
+| 32 | 2.3 min | 0.01219 | 0.00198 | 0.00214 |
+| 2048 | 2.4 h | 0.01219 | 0.00027 | 0.00027 |
+
+From two cycles it tracks the ideal curve, and between two and thirty-two it slightly beats it:
+summing distinct rotations of one histogram cancels more thoroughly than independent draws.
+
+So: **nothing for anything resolving in under about four seconds of game time, a great deal for
+anything a player waits on.** Which is the right way round.
+
+## The one you can see in the game
+
+Vanilla condenses noble gases out of cold empty air. One line in `Simulation.SimulateCoords`,
+reached only for a cell holding nothing:
+
+```csharp
+if (y.IsBelowSpace() && y.IsAboveWorkshop() && RNG.Roll(x, y, tick) % 100000 == 1)
+    TryCondenseNobleGasOutOfAir(field, x, y, tick);
+```
+
+Build a sealed box, chill it below 165 K, wait. That is a thing a player does on purpose. Except
+in vanilla it is not a one-in-a-hundred-thousand chance, it is a property of the address: either
+one of the position's 256 rolls is congruent to 1 mod 100000 or the box never produces a single
+atom. Measured: **one position in 443**.
+
+`test/CondensationTests.cs` builds 1922 cold traps in a single chunk. Vanilla: **10 can ever
+condense**, exact rather than sampled, because 256 rolls is a set you can read to the end. With
+the mod: **584 in 35668 ticks**, against 30.0% predicted.
+
+## What it does not change
+
+- **Determinism.** Every mode is a pure function of position and tick. Clients at the same tick
+  agree, a roll asked for twice in a tick answers the same, and `--determinism` passes.
+- **The average.** Mean rates stay within a quarter of nominal in every mode, and in practice move
+  by a percent or two.
+- **Anything without a position in it.** `RollLowerThanChanceOutOf1024_TimeOnly` and
+  `RollIntWithinRange` read a tick-only table and cannot have per-position bias.
+
+## What it does change
+
+**Outcomes**, which is the point, with consequences worth stating:
+
+- A world played with this mod evolves differently from the same world without it, from the first
+  tick. Nothing is corrupted and no save is invalidated -- the mod stores nothing -- but a scene
+  will not replay identically across installing or removing it.
+- **Every player in a multiplayer session must run the mod, in the same mode.** A mismatch is a
+  desync.
+- Worldgen consuming deterministic rolls produces different terrain.
+
 ## Performance
 
 Measured by `test/RollBenchmarks.cs` on an idle machine, over a 64x64 sweep per tick:
@@ -104,3 +192,11 @@ computed.
 **Run `--all` before calling anything done.** Every test here is a region test that never starts a
 session, so the harness's session tests exercise nothing in this mod and cost most of a full run
 -- but this project patches `RNG.Roll` underneath them, which is how it broke one of them once.
+
+## A note on the game, found along the way
+
+`RollLowerThanChanceOutOf1024_TimeOnly` is
+`return (RNGTimeOnly[tick & 0xFFF] &= 1023) < chance;` -- a compound assignment, confirmed in IL.
+Every call writes back into the table. Masking is idempotent so the answers never change, but a
+method the simulation calls per pixel, from inside `Parallel.ForEach` over chunks, writes to a
+shared array on every call.
