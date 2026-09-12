@@ -165,10 +165,26 @@ measurements of a Debug build.
 
 ## Install
 
-Needs [GodotMonoModLoader](https://github.com/sacroimper/GodotMonoModLoader). Drop
-`build/RNGTick.zip` into `<user data>/Mods/`, still zipped. The mod ships no materials, reactions
-or translations -- one class and one postfix -- so there is nothing to configure and nothing to
-uninstall beyond deleting the zip.
+Needs [GodotMonoModLoader](https://github.com/sacroimper/GodotMonoModLoader).
+
+Download `RNGTick.zip` from the
+[releases](https://github.com/sparr/atomcraft-mod-RNGTick/releases) and drop it into
+`<user data>/Mods/`. **Do not extract it** -- the loader reads mods straight out of the zip, and
+an extracted folder is ignored. Uninstalling is deleting the zip.
+
+Building from source instead puts the same file at `build/RNGTick.zip`. Either way the zip holds
+exactly one top-level folder, named for the mod id, which is what the loader requires:
+
+```
+RNGTick.zip
+  RNGTick/
+    mod.json
+    RNGTick.dll
+    LICENSE
+```
+
+The mod ships no materials, reactions or translations -- one class and one postfix -- so there is
+nothing to configure.
 
 ## Building and testing
 
