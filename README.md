@@ -32,15 +32,24 @@ over and it works.
 
 ## What this mod does
 
-Postfixes both `RNG.Roll` overloads, offsets the result by the tick plus a hash of the 256-tick
-cycle, and wraps it back into `[0, int.MaxValue)` -- the range `Random.Next()` promises and every
-caller was written against. That last part is not cosmetic: `RandomDeterministic` uses a roll as
-an array index.
+Postfixes both `RNG.Roll` overloads, offsets the result, and wraps it back into
+`[0, int.MaxValue)` -- the range `Random.Next()` promises and every caller was written against.
+That last part is not cosmetic: `RandomDeterministic` uses a roll as an array index.
 
-The cycle hash is there because if the modulus divides 256 then `tick % m` is already decided by
-the `tick & 255` that chose the value, and the tick alone would change nothing. That is not a
-corner case -- `RNG.RollPct` is `Roll(..) & 0x7F` and is the most-used roll in the game. The hash
-is the game's own, from `Simulation.PRNG`.
+| mode | offset added | |
+| --- | --- | --- |
+| `Off` | none | vanilla, byte for byte. Installed but inert. |
+| `Tick` | `tick` | |
+| `TickAndCycle` | `tick + Mix(tick >> 8)` | **the default** |
+
+Set through `RNGTick.RNGTickConfig.Mode`.
+
+**Why the tick alone is not enough.** If the modulus divides 256 then `tick % m` is already
+decided by the `tick & 255` that chose the value, so the outcome stays a function of
+`tick & 255`: still 256 outcomes on a 256-tick cycle, and elapsed time adds no samples. That is
+not a corner case -- `RNG.RollPct` is `Roll(..) & 0x7F`, 58 call sites against 30 that call `Roll`
+directly. `TickAndCycle` adds a hash of the cycle number, which is exactly the information the
+lookup index throws away. The hash is the game's own, from `Simulation.PRNG`.
 
 ## Install
 
