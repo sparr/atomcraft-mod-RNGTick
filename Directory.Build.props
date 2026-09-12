@@ -1,0 +1,54 @@
+<Project>
+
+  <!-- A local, uncommitted override. Drop a GameInstallDir property in here for an install
+       the discovery below does not know about. Checked first so it always wins. -->
+  <Import Project="$(MSBuildThisFileDirectory)Atomcraft.local.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)Atomcraft.local.props')" />
+
+  <PropertyGroup>
+    <!-- Where the game is installed. Normally supplied by the harness's build-mod.sh from
+         GAME_DIR in atomcraft-test.conf, by build.sh here, or with -p:GameInstallDir=...
+         MSBuild also picks it up from the environment automatically.
+
+         Nothing supplies it during a design-time build, though, which is how an editor's
+         language server loads the project: it gets neither the environment nor the command
+         line the shell scripts set up, so without the fallback below the project fails to
+         load with "GameInstallDir is not set" and every game type reads as missing. -->
+    <AtomcraftDllSuffix>data_Atomcraft_windows_x86_64/Atomcraft.dll</AtomcraftDllSuffix>
+  </PropertyGroup>
+
+  <!-- Conventional install locations, tried in order, and only ever used when nothing else
+       said. Each is confirmed by the presence of the actual assembly rather than the
+       directory, so a leftover empty folder does not win and then fail obscurely later. -->
+  <PropertyGroup Condition="'$(GameInstallDir)' == ''">
+    <_AcCandidate1>$(HOME)/Games/Steam/steamapps/common/Atomcraft</_AcCandidate1>
+    <_AcCandidate2>$(HOME)/.local/share/Steam/steamapps/common/Atomcraft</_AcCandidate2>
+    <_AcCandidate3>$(HOME)/.steam/steam/steamapps/common/Atomcraft</_AcCandidate3>
+    <_AcCandidate4>C:\Program Files (x86)\Steam\steamapps\common\Atomcraft</_AcCandidate4>
+
+    <GameInstallDir Condition="Exists('$(_AcCandidate1)/$(AtomcraftDllSuffix)')">$(_AcCandidate1)</GameInstallDir>
+    <GameInstallDir Condition="'$(GameInstallDir)' == '' AND Exists('$(_AcCandidate2)/$(AtomcraftDllSuffix)')">$(_AcCandidate2)</GameInstallDir>
+    <GameInstallDir Condition="'$(GameInstallDir)' == '' AND Exists('$(_AcCandidate3)/$(AtomcraftDllSuffix)')">$(_AcCandidate3)</GameInstallDir>
+    <GameInstallDir Condition="'$(GameInstallDir)' == '' AND Exists('$(_AcCandidate4)/$(AtomcraftDllSuffix)')">$(_AcCandidate4)</GameInstallDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDataDir Condition="'$(GameInstallDir)' != ''">$(GameInstallDir)/data_Atomcraft_windows_x86_64</GameDataDir>
+  </PropertyGroup>
+
+  <!-- Same problem, same shape, for the test project's reference to the harness assembly:
+       run-tests.sh exports it here before building, so a design-time load can find it too
+       once the suite has been run at least once. -->
+  <PropertyGroup Condition="'$(TestHarnessDir)' == ''">
+    <_AcHarness>$(HOME)/.cache/atomcraft-test-rngtick/harness</_AcHarness>
+    <TestHarnessDir Condition="Exists('$(_AcHarness)/Atomcraft.TestHarness.dll')">$(_AcHarness)</TestHarnessDir>
+  </PropertyGroup>
+
+  <Target Name="RequireGameInstallDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(GameInstallDir)' == ''"
+           Text="GameInstallDir is not set and no Atomcraft install was found in the usual places. Build through ./build.sh, or the harness's ../Testing/build-mod.sh $(MSBuildProjectFullPath), or pass -p:GameInstallDir=/path/to/Atomcraft, or create $(MSBuildThisFileDirectory)Atomcraft.local.props setting it." />
+    <Error Condition="'$(GameInstallDir)' != '' AND !Exists('$(GameDataDir)/Atomcraft.dll')"
+           Text="No Atomcraft.dll under $(GameDataDir). Check GameInstallDir=$(GameInstallDir)." />
+  </Target>
+
+</Project>

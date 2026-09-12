@@ -1,0 +1,15 @@
+{
+  "id": "RNGTick.Test",
+  "name": "RNG Tick Offset Tests",
+  "description": "Tests for the RNGTick mod. Install only when running the test harness.",
+  "author": "sparr",
+  "version": "0.1.0",
+  "modules": [
+    {
+      "moduleId": "RNGTick.Test/Main",
+      "dll": "RNGTick.Test.dll",
+      "initClass": "RNGTick.Test.ModEntry",
+      "dependencies": ["RNGTick/Main", "TestHarness/Main"]
+    }
+  ]
+}

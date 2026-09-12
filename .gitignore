@@ -1,0 +1,7 @@
+# Build output. Everything here is reproducible from source.
+bin/
+obj/
+build/
+
+# Local machine configuration: the game install path differs per machine and per store.
+Atomcraft.local.props

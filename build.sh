@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Build both mods, and optionally stage them where the harness's test game will load them.
+#
+#   ./build.sh [--install]
+#
+# The harness's build-mod.sh is the documented path and supplies the same properties. This
+# exists because its restore step falls through to the configured package sources, which can
+# stall for many minutes on a machine with poor reach to nuget.org even though every package
+# needed is already in the local cache. Restoring with no sources at all uses the global
+# packages folder and nothing else: instant when the cache is warm, and an immediate, legible
+# error rather than a stall when it is not.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+GAME_DIR="${GAME_DIR:-$HOME/Games/Steam/steamapps/common/Atomcraft}"
+# A private test root. The default one is shared with whatever else is being developed
+# against this harness, and installing mod zips into it makes one session's failures show up
+# in another's run.
+TEST_ROOT="${TEST_ROOT:-$HOME/.cache/atomcraft-test-rngtick}"
+INSTALL="${INSTALL:-$TEST_ROOT/install}"
+
+INSTALL_IT=0
+[ "${1:-}" = "--install" ] && INSTALL_IT=1
+
+ARGS=(-p:GameInstallDir="$GAME_DIR"
+      -p:AppData="$TEST_ROOT/scratch-appdata"
+      -p:TestHarnessDir="$TEST_ROOT/harness")
+[ "$INSTALL_IT" = 1 ] && ARGS+=(-p:TestInstallDir="$INSTALL")
+
+OFFLINE_CONFIG="$(mktemp)"
+trap 'rm -f "$OFFLINE_CONFIG"' EXIT
+cat > "$OFFLINE_CONFIG" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+  </packageSources>
+</configuration>
+XML
+
+for project in src/RNGTick.csproj test/RNGTick.Test.csproj; do
+    echo "==> $project"
+    nice -n 19 dotnet restore "$project" --configfile "$OFFLINE_CONFIG" "${ARGS[@]}" >/dev/null
+    nice -n 19 dotnet build "$project" --no-restore -v q --nologo "${ARGS[@]}"
+done

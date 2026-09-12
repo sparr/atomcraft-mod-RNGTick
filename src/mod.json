@@ -1,0 +1,14 @@
+{
+  "id": "RNGTick",
+  "name": "RNG Tick Offset",
+  "description": "Offsets the deterministic RNG by the current tick, so a pixel's odds stop depending on where it is standing.",
+  "author": "sparr",
+  "version": "0.1.0",
+  "modules": [
+    {
+      "moduleId": "RNGTick/Main",
+      "dll": "RNGTick.dll",
+      "initClass": "RNGTick.ModEntry"
+    }
+  ]
+}
