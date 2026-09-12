@@ -51,6 +51,30 @@ not a corner case -- `RNG.RollPct` is `Roll(..) & 0x7F`, 58 call sites against 3
 directly. `TickAndCycle` adds a hash of the cycle number, which is exactly the information the
 lookup index throws away. The hash is the game's own, from `Simulation.PRNG`.
 
+## Performance
+
+Measured by `test/RollBenchmarks.cs` on an idle machine, over a 64x64 sweep per tick:
+
+| | ns per roll |
+| --- | ---: |
+| inlined array lookup, what vanilla costs | 3.2 |
+| **shipped postfix** | **5.4** |
+
+About **2.2 ns**, or 1.7x an inlined vanilla roll. In the condensation fixture -- about as
+roll-heavy as a region gets, 1922 rolls per tick -- that is roughly 1% of the tick.
+
+**Build Release, and nothing else matters.** A Debug assembly carries `DebuggableAttribute` with
+`DisableOptimizations`, which switches the JIT off for that assembly entirely: nothing is inlined
+and the same postfix measures **22 ns**. `build.sh` defaults to Release for this reason.
+
+With optimizations on, everything that looks like it should cost something does not. One flat
+method measures 5.40, the shipped three-method chain 5.43; the JIT folds
+`AfterRoll` -> `Apply` -> `Wrap`/`Mix` and **the split into `TickOffset` costs 0.03 ns**.
+`minimal/RNGTickMinimal.cs` is the control for that comparison, and the benchmark asserts it
+produces identical rolls before timing it. There is no abstraction penalty to recover here, which
+is worth stating because the opposite was believed for a while on the strength of careful
+measurements of a Debug build.
+
 ## Install
 
 Needs [GodotMonoModLoader](https://github.com/sacroimper/GodotMonoModLoader). Drop
