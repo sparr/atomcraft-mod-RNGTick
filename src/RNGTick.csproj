@@ -23,6 +23,10 @@
       <Private>false</Private>
     </Reference>
     <!-- Harmony is bundled by the mod loader; never ship 0Harmony.dll. -->
+    <!-- IL weaving: InlineMethod.Fody rewrites calls to [Inline] methods into their bodies after
+         the compiler has run. Neither package ships with the mod. -->
+    <PackageReference Include="Fody" Version="6.8.1" PrivateAssets="all" />
+    <PackageReference Include="InlineMethod.Fody" Version="0.8.7" PrivateAssets="all" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2">
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
