@@ -3,12 +3,13 @@
 #
 #   ./build.sh [--install]
 #
-# The harness's build-mod.sh is the documented path and supplies the same properties. This
-# exists because its restore step falls through to the configured package sources, which can
-# stall for many minutes on a machine with poor reach to nuget.org even though every package
-# needed is already in the local cache. Restoring with no sources at all uses the global
-# packages folder and nothing else: instant when the cache is warm, and an immediate, legible
-# error rather than a stall when it is not.
+# The harness documents its own build-mod.sh for this, and it supplies the same properties.
+# This exists for two reasons. Its restore step falls through to the configured package
+# sources, which can stall for many minutes on a machine with poor reach to nuget.org even
+# though every package needed is already in the local cache; restoring with no sources at all
+# uses the global packages folder and nothing else, which is instant when the cache is warm and
+# an immediate, legible error when it is not. And it keeps this project off the harness's
+# scripts for building, so a harness checkout being mid-edit cannot break a build here.
 set -euo pipefail
 cd "$(dirname "$0")"
 

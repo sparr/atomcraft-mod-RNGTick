@@ -1,0 +1,28 @@
+# Where this project finds the Atomcraft TestHarness.
+#
+#   cp harness.conf.example harness.conf   and edit.
+#
+# harness.conf is gitignored. The environment wins over it, so a one-off run can set either
+# value inline instead. run-tests.sh also reads the harness's own per-user config at
+# $XDG_CONFIG_HOME/atomcraft-test/config, so putting these lines there configures every project
+# that consumes the harness at once.
+#
+# There is no default for either. A checkout lives wherever its owner put it, and a path guessed
+# from a sibling directory name goes stale silently the first time that directory is renamed.
+#
+# Point neither of these at a tree you are developing the harness in. This project does not
+# build the harness and does not read its sources, on purpose: a mid-edit checkout does not
+# compile, and when that happened it failed this project's tests for reasons that had nothing
+# to do with this project.
+
+# The tooling that provisions and launches a patched copy of the game: run-tests.sh,
+# bootstrap.sh and lib/. Extract a release source archive from
+# https://github.com/sparr/atomcraft-mod-TestHarness/releases, or park a checkout on a release
+# tag. Nothing here compiles it.
+ATOMCRAFT_HARNESS=""
+
+# A pinned TestHarness.zip from the same release. It supplies both the assembly these mods
+# compile against and the harness mod the game loads, so the two cannot disagree. Keep it in
+# step with the Harness.RequireVersion pin in test/ModEntry.cs and conformance/ModEntry.cs --
+# a mismatch is reported by the harness at load time as a refused mod.
+ATOMCRAFT_HARNESS_ZIP=""

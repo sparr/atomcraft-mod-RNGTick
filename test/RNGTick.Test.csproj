@@ -38,7 +38,7 @@
 
   <Target Name="RequireTestHarnessDir" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(TestHarnessDir)' == '' OR !Exists('$(TestHarnessDir)/Atomcraft.TestHarness.dll')"
-           Text="No Atomcraft.TestHarness.dll under TestHarnessDir='$(TestHarnessDir)'. Build the harness first, then build this through ../Testing/build-mod.sh." />
+           Text="No Atomcraft.TestHarness.dll under TestHarnessDir='$(TestHarnessDir)'. Run ./run-tests.sh here, which extracts the assembly out of the pinned TestHarness.zip, or pass -p:TestHarnessDir=&lt;an extracted TestHarness folder&gt;." />
   </Target>
 
   <Import Project="../ModZip.targets" />

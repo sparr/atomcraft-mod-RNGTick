@@ -6,8 +6,8 @@
           Condition="Exists('$(MSBuildThisFileDirectory)Atomcraft.local.props')" />
 
   <PropertyGroup>
-    <!-- Where the game is installed. Normally supplied by the harness's build-mod.sh from
-         GAME_DIR in atomcraft-test.conf, by build.sh here, or with -p:GameInstallDir=...
+    <!-- Where the game is installed. Normally supplied by build.sh here, by the harness's
+         build-mod.sh from GAME_DIR in atomcraft-test.conf, or with -p:GameInstallDir=...
          MSBuild also picks it up from the environment automatically.
 
          Nothing supplies it during a design-time build, though, which is how an editor's
@@ -37,8 +37,8 @@
   </PropertyGroup>
 
   <!-- Same problem, same shape, for the test project's reference to the harness assembly:
-       run-tests.sh exports it here before building, so a design-time load can find it too
-       once the suite has been run at least once. -->
+       run-tests.sh extracts it here out of the pinned TestHarness.zip before building, so a
+       design-time load can find it too once the suite has been run at least once. -->
   <PropertyGroup Condition="'$(TestHarnessDir)' == ''">
     <_AcHarness>$(HOME)/.cache/atomcraft-test-rngtick/harness</_AcHarness>
     <TestHarnessDir Condition="Exists('$(_AcHarness)/Atomcraft.TestHarness.dll')">$(_AcHarness)</TestHarnessDir>
@@ -46,7 +46,7 @@
 
   <Target Name="RequireGameInstallDir" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(GameInstallDir)' == ''"
-           Text="GameInstallDir is not set and no Atomcraft install was found in the usual places. Build through ./build.sh, or the harness's ../Testing/build-mod.sh $(MSBuildProjectFullPath), or pass -p:GameInstallDir=/path/to/Atomcraft, or create $(MSBuildThisFileDirectory)Atomcraft.local.props setting it." />
+           Text="GameInstallDir is not set and no Atomcraft install was found in the usual places. Build through ./build.sh or ./run-tests.sh, or pass -p:GameInstallDir=/path/to/Atomcraft, or create $(MSBuildThisFileDirectory)Atomcraft.local.props setting it." />
     <Error Condition="'$(GameInstallDir)' != '' AND !Exists('$(GameDataDir)/Atomcraft.dll')"
            Text="No Atomcraft.dll under $(GameDataDir). Check GameInstallDir=$(GameInstallDir)." />
   </Target>

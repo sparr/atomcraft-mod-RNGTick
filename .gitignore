@@ -3,5 +3,7 @@ bin/
 obj/
 build/
 
-# Local machine configuration: the game install path differs per machine and per store.
+# Local machine configuration: the game install path and the harness checkout both differ
+# per machine. See harness.conf.example.
 Atomcraft.local.props
+harness.conf

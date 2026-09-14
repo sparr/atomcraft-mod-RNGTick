@@ -14,7 +14,7 @@ public static class ModEntry
     public const string ModId = "RNGTick.Test";
 
     /// <summary>The harness this mod is written against. Its 0.x API changes between minors.</summary>
-    public const string HarnessVersion = "0.3";
+    public const string HarnessVersion = "0.4";
 
     public static void Initialize()
     {
