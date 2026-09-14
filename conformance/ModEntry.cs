@@ -15,7 +15,7 @@ public static class ModEntry
     public const string ModId = "RNGConformance";
 
     /// <summary>The harness this is written against. Its 0.x API changes between minors.</summary>
-    public const string HarnessVersion = "0.4";
+    public const string HarnessVersion = "0.3";
 
     public static void Initialize() => Harness.RequireVersion(HarnessVersion);
 }

@@ -105,6 +105,13 @@ done
 [ -f "$HARNESS_ZIP" ] || { echo "error: no file at ATOMCRAFT_HARNESS_ZIP=$HARNESS_ZIP" >&2; exit 1; }
 
 # Provision the private root once, by cloning the shared one's patched game if it exists.
+#
+# Note for a root that already exists: the harness discovers tests by scanning every loaded
+# assembly, so any stale mod zip left in $TEST_ROOT/install/Mods is still loaded and can take a
+# run down whatever the filter says. Nothing here builds the harness's own test mods any more,
+# so leftovers from when it did outlive their harness -- one built against 0.4.0-dev crashed
+# discovery under 0.3.0 with "'RequiresDisplay' property specified was not found". Clear the
+# Mods directory if a run fails before any test does.
 if [ ! -d "$TEST_ROOT/install" ]; then
     SHARED="${SHARED_TEST_ROOT:-$HOME/.cache/atomcraft-test}"
     if [ -d "$SHARED/install" ]; then
