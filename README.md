@@ -77,47 +77,80 @@ identical in both.
 offset, while collapsing a fair coin flip to always-heads. Nothing in the shipped volume looks
 like that, but the assumption is load-bearing, so it is exercised rather than asserted in prose.
 
-## How long it takes to work
+## How long it takes to work, and what it costs
 
 `tick >> 8` is constant inside a 256-tick cycle, so the cycle term contributes one fixed rotation
-there: the same histogram, relabelled. Measured over single cycles the spread is 0.98x to 1.10x
-vanilla's. **Inside one cycle this mod does nothing.**
+there: the same histogram, relabelled. A position has 256 values available to it in 256 ticks and
+no offset scheme can make it behave like more, so **inside one cycle this mod cannot help.** The
+cycle term's only job is to make successive cycles differ, so that counts accumulate instead of
+repeating.
 
-That is a floor, not a shortfall -- a position has 256 values available to it in 256 ticks, so
-nothing can make it behave like more. The cycle term's only job is to make successive cycles
-differ so counts accumulate:
+Since the 2026-09-12 build that is not quite the whole story, because inside one cycle the mod is
+now measurably *worse* than vanilla for some consumers. The game fills its RNG volume with a
+shuffled permutation of 0-255 per position, so where the modulus divides 256 vanilla is not
+sampling at all -- `Roll & 0x7F` visits every value exactly twice at every position, and the
+spread between positions is **exactly zero**, which is better than any generator can be. Rotating
+a permutation by a per-position constant gives back an ordinary 256-sample draw, so the mod lands
+on the sampling floor instead. Measured over 144 positions:
 
-| cycles | game time at 60 tps | vanilla | `TickAndCycle` | ideal for that many samples |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 4.3 s | 0.01219 | 0.01213 | 0.01211 |
-| 2 | 8.5 s | 0.01219 | 0.00839 | 0.00856 |
-| 32 | 2.3 min | 0.01219 | 0.00198 | 0.00214 |
-| 2048 | 2.4 h | 0.01219 | 0.00027 | 0.00027 |
+| consumer | vanilla | `TickAndCycle`, one cycle | `TickAndCycle`, 128 cycles |
+| --- | ---: | ---: | ---: |
+| `RollPct` at 5 in 128, `m` divides 256 | **0.00000**, at any length | 0.01075 to 0.01210 | 0.00105 |
+| reaction at `Probability 240`, `m` does not | 0.00385, **44 of 144 positions dead** | | 0.00034, none dead |
 
-From two cycles it tracks the ideal curve, and between two and thirty-two it slightly beats it:
-summing distinct rotations of one histogram cancels more thoroughly than independent draws.
+The sampling floor is 0.01211 for 256 samples and 0.00107 for 32768, so both `TickAndCycle` figures
+in the top row are exactly what 256 and 32768 draws leave behind. It never gets below vanilla's
+zero, and waiting does not help, because vanilla's zero does not grow either.
 
-So: **nothing for anything resolving in under about four seconds of game time, a great deal for
-anything a player waits on.** Which is the right way round.
+**That cost is accepted.** It is real and it is permanent for power-of-two consumers, and it buys
+the second row, where the balanced volume does nothing at all: a modulus that does not divide 256
+still leaves a position locked out of outcomes entirely, and no amount of waiting reaches them.
+That is where the shipped rare reactions live, and it is what this mod is for. Pick `Off` if a
+world cares more about the first row than the second.
+
+So: **nothing for anything resolving in under about four seconds of game time, a great deal for a
+rare event a player waits on, and a little worse than stock for frequent power-of-two checks.**
 
 ## The one you can see in the game
 
-Vanilla condenses noble gases out of cold empty air. One line in `Simulation.SimulateCoords`,
-reached only for a cell holding nothing:
+`Compacted Dirt Decomposition` ships with the game: one Compacted Dirt above 300 K becomes one
+Dirt, at `Probability 1000`. `BaseMaterial.IsReactionValid` rejects it whenever
+`RNG.Roll(posX, posY, tick) % 1000 != 0`, on the raw tick.
 
-```csharp
-if (y.IsBelowSpace() && y.IsAboveWorkshop() && RNG.Roll(x, y, tick) % 100000 == 1)
-    TryCondenseNobleGasOutOfAir(field, x, y, tick);
-```
+One input cell and one output cell makes it the cleanest case there is -- a site is a **single
+pixel**, so exactly one position's rolls decide it. `test/ReactionTests.cs` builds 1922 of them as
+a checkerboard in one chunk, each walled off from its neighbours so no site can borrow another's
+luck, and runs the same positions under each mode for ten 256-tick cycles:
 
-Build a sealed box, chill it below 165 K, wait. That is a thing a player does on purpose. Except
-in vanilla it is not a one-in-a-hundred-thousand chance, it is a property of the address: either
-one of the position's 256 rolls is congruent to 1 mod 100000 or the box never produces a single
-atom. Measured: **one position in 443**.
+| | sites that ever reacted | |
+| --- | ---: | --- |
+| vanilla | **433 of 1922 (22.5%)** | all of them inside the first 256 ticks, and **not one more in the 2304 that followed** |
+| `Tick` | 1760 (91.6%) | |
+| `TickAndCycle` | 1782 (92.7%) | against 92.3% for a generator that behaves like a probability |
 
-`test/CondensationTests.cs` builds 1922 cold traps in a single chunk. Vanilla: **10 can ever
-condense**, exact rather than sampled, because 256 rolls is a set you can read to the end. With
-the mod: **584 in 35668 ticks**, against 30.0% predicted.
+One run. The counts move a point or two with whichever slice of the world the harness hands the
+test, but the shape does not: vanilla has never exceeded its 22.6% ceiling and has never gained a
+site after the first cycle.
+
+The vanilla row is the whole argument, and it is stronger than a low rate. The set stopped growing
+after one cycle and never moved again, because a position has 256 rolls and nothing else: either
+one of them is congruent to 0 mod 1000 or the reaction cannot happen there, ever. Over 77% of the
+world is locked out of a recipe the game describes as one in a thousand.
+
+Of the 84 shipped recipes carrying a probability, 14 are rarer than 1 in 100. `Compost from Fallen
+Leaves` at 1 in 10000 -- nine leaves, no heat rig, the cheapest thing in the game to leave running
+-- locks out about 97% of positions.
+
+Everything above is measured in the game's own simulation. The test places the game's own
+material, lets the game's own `Step` run, and counts pixels; it reproduces none of the game's
+arithmetic, which is the one way a test like this can report a fix that is not there. The noble
+gas condensation gate used to be the showcase here, and the 2026-09-12 build fixed it upstream by
+folding the cycle number into that one call site -- this mod's idea, applied by hand to a single
+consumer. `test/CondensationTests.cs` now runs both arms through the simulation and asserts only
+that the mod keeps up with the game. Over 22315 ticks the mod's arm lands on the arithmetic every
+time -- 19.0%, 19.4%, 19.5% and 20.4% across four regions, against 20.0% predicted -- while
+vanilla's ranges from 17.2% to 24.4%, because the game's own fix reuses one row of the table per
+cycle and the traps in a region rise and fall together.
 
 ## What it does not change
 
@@ -189,14 +222,63 @@ nothing to configure.
 ## Building and testing
 
 ```sh
-./build.sh              # mod, tests, conformance suite
-./run-tests.sh          # this project's tests. About 40 seconds. The everyday loop.
-./run-tests.sh --all    # plus the harness's own suite. About 2m45. Before calling anything done.
+./build.sh                    # mod, tests, conformance suite
+./run-tests.sh                # this project's tests. About a minute. The everyday loop.
+./run-tests.sh --retirement   # instead: is the game still broken? See below.
+./run-tests.sh --all          # everything installed in the test root, no filter
 ```
 
-Tests use the [TestHarness](https://github.com/sparr/atomcraft-mod-TestHarness) and run inside the real game, headless. They ask
-`Atomcraft.RNG` for rolls rather than reimplementing the lookup: a test that computed its own
-expected values would pass against a mod that patched nothing.
+Tests use the [TestHarness](https://github.com/sparr/atomcraft-mod-TestHarness) and run inside the
+real game, headless. This project does not build the harness and does not read its sources, so
+point it at a **release** rather than at a tree you are working in:
+
+```sh
+ATOMCRAFT_HARNESS=/path/to/testharness-release   # tooling: run-tests.sh, bootstrap.sh, lib/
+ATOMCRAFT_HARNESS_ZIP=/path/to/TestHarness.zip   # the pinned mod, and the assembly to build against
+```
+
+Put both in `harness.conf`, which is gitignored; `harness.conf.example` has the details, and the
+harness's own per-user config at `$XDG_CONFIG_HOME/atomcraft-test/config` is read too, so one pair
+of lines there configures every project that consumes it. There is no default for either, and a
+missing one is an error rather than a guess. The assembly is taken out of the same zip the game
+loads, so "compiled against" and "ran against" are the same bytes by construction.
+
+### The retirement suite
+
+`test/RetirementTests.cs` is the one place that asserts the **unmodified game** is still broken.
+Nothing else in the project does: every other bar is absolute -- a sampling floor, a share of the
+arithmetic expectation -- and would pass unchanged against a game that fixed itself tomorrow.
+
+**A failure there is good news.** It means the defect is gone and the part of this mod that
+addressed it can be retired; each failure message says which part. That is a different question
+from whether the mod is correct, so it is excluded from the default run and asked deliberately.
+
+The split was forced by a real event. Before it, three tests were written as "vanilla is badly
+spread, the mod fixes it", and the 2026-09-12 build falsified the first half of each. On buildid
+25276035 the suite reads:
+
+| | |
+| --- | --- |
+| `VanillaStillLocksPositionsOutOfAReactionProbability` | passes -- still broken, keep |
+| `VanillaStillFreezesARareShippedReactionAfterOneCycle` | passes -- still broken, keep |
+| `VanillaIsStillBadlySpreadOnAPercentageCheck` | **fails** -- fixed upstream |
+| `VanillaStillLeansOnACoinFlip` | **fails** -- fixed upstream |
+| `AVanillaPositionStillBehavesLikeJust256Samples` | **fails** -- the volume is balanced, not sampled |
+| `TheTickAloneOnlyRelocatesAPercentageCheckBias` | **fails** -- no bias left to relocate |
+
+Which is the case for retiring the cycle term and keeping the tick: everything still failing in
+the game has a modulus that does not divide 256.
+
+`--all` drops the filter and runs whatever is installed in the test root. Since this project no
+longer builds the harness, that includes the harness's own suite only if you staged its test mod
+there yourself.
+
+Tests ask `Atomcraft.RNG` for rolls rather than reimplementing the lookup: a test that computed its
+own expected values would pass against a mod that patched nothing. The same rule applies one level
+up, to the game's consumers of the RNG. `test/ReactionTests.cs` and its conformance counterpart
+place a shipped material and count what the simulation does to it rather than modelling the gate in
+`BaseMaterial`; the condensation test used to model its gate, and went on passing for a build where
+the game had stopped evaluating the expression it modelled.
 
 That is the failure worth guarding. Both `Roll` overloads carry `AggressiveInlining`, and a
 Harmony detour on such a method is defeated by any caller compiled with the original body pasted
@@ -205,10 +287,12 @@ through one of the game's own wrappers (`RollPct`, `RollFloat`, `RandomDetermini
 compares the wrapper's answer against the patched `Roll` rather than against a number the test
 computed.
 
-**Run `--all` before calling anything done.** Every test here is a region test that never starts a
-session, so the harness's session tests exercise nothing in this mod and cost about 120 of the 137
-seconds -- but this project patches `RNG.Roll` underneath them, which is how it broke one of them
-once.
+**Running the harness's own suite is still worth doing before a release**, if you have its test
+mod staged. Every test here is a region test that never starts a session, so the harness's session
+tests exercise nothing in this mod -- but this project patches `RNG.Roll` underneath them, which
+is how it broke one of them once, and still does: `OriginalTests.TheTwoAgreeOnceThePatchIsGone`
+asserts that an unpatched `RNG.Roll` matches its bound original, which cannot hold while any mod
+is patching that method. Reported upstream.
 
 ## The conformance suite
 
@@ -220,16 +304,29 @@ Its assertions are **absolute** rather than diffs against stock, so it stays val
 version of the game that fixes this itself -- there is no stock to compare against once the stock
 is the thing being judged. A fair generator still leaves a spread of `sqrt(p(1-p)/n)` between
 positions and no fix can beat that, so each test asks for a spread within three times that floor.
-The two cases are nowhere near each other:
+Measured against buildid 25276035:
 
 | | stock | with this mod |
 | --- | --- | --- |
-| reaction at `Probability 240` | 13.3x the floor, 49 of 144 positions dead | 1.0x, none dead |
-| `RollPct` at 5 in 128 | 10.5x | 0.9x |
-| coin flip | 10.7x | 0.8x |
+| reaction at `Probability 240` | 10.8x the floor, 44 of 144 positions dead | 1.0x, none dead |
+| `RollPct` at 5 in 128 | 0.0x, every position exactly 0.03906 | 1.0x |
+| coin flip | 0.0x, every position exactly 0.50000 | 0.8x |
+| `Compacted Dirt Decomposition`, in the simulation | 411 of 1922 sites, frozen after 256 ticks | 1775 (92.4%) |
 
-`RollPct` is tested separately on purpose: 128 divides 256, so a fix that only adds the tick
+A spread of exactly zero is not a well-behaved generator. The 2026-09-12 build fills the RNG volume
+with a balanced permutation of 0-255 per position, so **every power-of-two consumer is now exactly
+uniform by construction** -- and a rare event, whose modulus does not divide 256, is untouched. The
+suite's power-of-two tests pass on stock today and its rare-event tests do not.
+
+`RollPct` is still tested separately on purpose: 128 divides 256, so a fix that only adds the tick
 passes the reaction test and fails that one.
+
+The last row is the one that does not model anything. Every other test reduces `RNG.Roll` the way a
+consumer would -- `r % 240 == 0` for the reaction gate -- which is a copy of the game's code with
+no link back to it, and such a copy went stale once already in this repository without anything
+failing. `conformance/ShippedReactionTests.cs` builds 1922 one-pixel sites of a shipped material,
+lets the game's own `Step` run for ten cycles, and counts. Stock fails it by freezing: 411 sites
+react inside the first 256 ticks and not one more in the 2304 that follow.
 
 One test does compare against stock, and is the only one that can be inapplicable -- it tells a
 mod that is not reaching `RNG.Roll` from one that is. If `RNGVolume` is gone the game has changed
@@ -263,8 +360,10 @@ human-readable `[conformance]` line per measurement giving the mean, the spread,
 the sampling floor that is, and how many positions never produced the outcome at all. The exit
 code is the suite's, so it works in CI.
 
-Six tests. Against the stock game three fail on spread and one on nothing reaching `RNG.Roll`;
-the two that pass are determinism and range, which stock does not get wrong.
+Seven tests. Against buildid 25276035 stock, three fail: the reaction spread, the in-simulation
+reaction, and nothing reaching `RNG.Roll`. The four that pass are the coin flip and the percentage
+check, which the balanced volume made exactly uniform, and determinism and range, which stock never
+got wrong.
 
 ## A note on the game, found along the way
 
