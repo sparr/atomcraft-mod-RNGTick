@@ -23,9 +23,22 @@ public static class BiasTests
     public const int Ticks = 32768;
 
     /// <summary>
+    /// The spread between positions that <paramref name="samples"/> independent draws of a
+    /// <paramref name="p"/>-chance event leave behind, which nothing can get below.
+    ///
+    /// <para>Every bound in this file is expressed against this rather than against vanilla's
+    /// spread. Vanilla is not a stable yardstick: since the 2026-09-12 build its spread on a
+    /// power-of-two modulus is exactly zero, so a ratio against it is infinite and a test
+    /// written as one says nothing. It is also the wrong yardstick in principle -- what a mod
+    /// owes is the sampling floor, not an improvement on whatever the game happens to do this
+    /// version. <see cref="RetirementTests"/> is where claims about vanilla live now.</para>
+    /// </summary>
+    internal static double SamplingFloor(double p, int samples) => Math.Sqrt(p * (1 - p) / samples);
+
+    /// <summary>
     /// How often an event fires at each position, as a fraction of <see cref="Ticks"/>.
     /// </summary>
-    private sealed class Spread
+    internal sealed class Spread
     {
         public required string Label { get; init; }
         public required double Mean { get; init; }
@@ -49,7 +62,7 @@ public static class BiasTests
             $"never {Never}/{Positions}";
     }
 
-    private static Spread Measure(string label, OffsetMode mode, Func<int, bool> fires)
+    internal static Spread Measure(string label, OffsetMode mode, Func<int, bool> fires)
     {
         var rates = new List<double>();
 
@@ -97,13 +110,10 @@ public static class BiasTests
         var cycle = Measure("+tick+cycle", OffsetMode.TickAndCycle, r => r % 240 == 0);
         Log.Info($"Probability 240 over {Ticks} ticks -- {vanilla} | {tick} | {cycle}");
 
-        // Vanilla, stated as an assertion so a game update that fixes this upstream is
-        // reported rather than silently tolerated.
-        if (vanilla.Never < vanilla.Positions / 5)
-            throw new AssertionException(
-                $"expected the unmodified game to have many positions where this reaction can " +
-                $"never fire, found only {vanilla.Never} of {vanilla.Positions}. Either the RNG " +
-                $"changed or this test is no longer measuring what it thinks. ({vanilla})");
+        // Absolute, not a diff against vanilla. Three times the floor is the same bar the
+        // conformance suite sets, and it separates a fixed consumer from a broken one with room
+        // to spare: measured 2.7x for +tick and 1.0x for +tick+cycle.
+        var floor = SamplingFloor(1.0 / 240, Ticks);
 
         foreach (var fixedUp in new[] { tick, cycle })
         {
@@ -111,12 +121,11 @@ public static class BiasTests
                 throw new AssertionException(
                     $"{fixedUp.Label}: {fixedUp.Never} position(s) still never fire at all. ({fixedUp})");
 
-            // A quarter of vanilla's spread. Measured at roughly a quarter for +tick and a
-            // thirteenth for +tick+cycle, so the threshold has real room in it.
-            if (fixedUp.StdDev > vanilla.StdDev / 2.5)
+            if (fixedUp.StdDev > floor * 3)
                 throw new AssertionException(
-                    $"{fixedUp.Label}: spread across positions is {fixedUp.StdDev:F5}, barely " +
-                    $"below vanilla's {vanilla.StdDev:F5}. ({fixedUp})");
+                    $"{fixedUp.Label}: spread across positions is {fixedUp.StdDev:F5}, " +
+                    $"{fixedUp.StdDev / floor:F1} times the {floor:F5} that sampling {Ticks} ticks " +
+                    $"leaves on its own. ({fixedUp})");
         }
 
         // The average has to stay put: the point is to move the odds around, not to change them.
@@ -156,40 +165,31 @@ public static class BiasTests
         var cycle = Measure("+tick+cycle", OffsetMode.TickAndCycle, fires);
         Log.Info($"RollPct < {Chance} over {Ticks} ticks -- {vanilla} | {tick} | {cycle}");
 
-        if (vanilla.StdDev < vanilla.Mean / 4)
-            throw new AssertionException(
-                $"expected the unmodified game to be badly spread here, found sd {vanilla.StdDev:F5} " +
-                $"against mean {vanilla.Mean:F5}. ({vanilla})");
+        const double P = (double)Chance / 128;
+        var floorOneCycle = SamplingFloor(P, 256);
+        var floorAll = SamplingFloor(P, Ticks);
 
-        // Adding the tick alone changes essentially nothing, and that is the finding. Asserted
-        // from both sides: if a future change to Tick mode ever did fix this, this test should
-        // fail and be rewritten rather than keep asserting a limitation that no longer exists.
-        var ratio = tick.StdDev / vanilla.StdDev;
-        if (ratio < 0.75 || ratio > 1.35)
+        // The limitation, stated as a number rather than as a comparison with vanilla. Because
+        // 128 divides 256 the +tick outcome is still a function of tick & 255, so a position's
+        // rate over 32768 ticks is exactly its rate over 256: pinned at 256 samples however long
+        // the world runs, whatever the volume happens to hold.
+        var ratio = tick.StdDev / floorOneCycle;
+        if (ratio < 0.6 || ratio > 1.5)
             throw new AssertionException(
-                $"+tick changed the spread of a power-of-two check by a factor of {ratio:F2}, " +
-                $"which contradicts the reasoning this mod's default rests on. ({tick})");
+                $"+tick's spread is {tick.StdDev:F5}, {ratio:F2} times the {floorOneCycle:F5} that " +
+                $"256 samples leave. Adding the tick to a power-of-two modulus cannot add or " +
+                $"remove samples, so anything but the 256-sample floor contradicts the reasoning " +
+                $"this mod's default rests on. ({tick})");
 
-        // The sharper form of the same finding, and the one that says what actually happened:
-        // if +tick had reduced the bias, an unlucky position would still be somewhat unlucky and
-        // the two rate vectors would be positively correlated. They are not correlated at all,
-        // which means the bias was picked up and put down somewhere else. Measured at -0.005
-        // over 4096 positions offline and around zero here.
-        var correlation = Correlation(vanilla.Rates, tick.Rates);
-        if (Math.Abs(correlation) > 0.35)
+        // And the cycle term is what turns elapsed time into samples: the floor it has to reach
+        // is the one for all 32768 ticks, two orders of magnitude below +tick's.
+        if (cycle.StdDev > floorAll * 1.5)
             throw new AssertionException(
-                $"vanilla and +tick per-position rates correlate at {correlation:F3}. The whole " +
-                "account of what +tick does to a power-of-two modulus -- reshuffle, not reduce " +
-                "-- depends on these being independent.");
-        Log.Info($"RollPct < {Chance}: vanilla vs +tick correlation {correlation:F4}, " +
-                 $"vanilla vs +tick+cycle {Correlation(vanilla.Rates, cycle.Rates):F4}");
+                $"+tick+cycle left the spread at {cycle.StdDev:F5}, {cycle.StdDev / floorAll:F2} " +
+                $"times the {floorAll:F5} that {Ticks} samples leave, so the cycle term is not " +
+                $"doing its job. ({cycle})");
 
-        if (cycle.StdDev > vanilla.StdDev / 4)
-            throw new AssertionException(
-                $"+tick+cycle left the spread at {cycle.StdDev:F5} against vanilla's " +
-                $"{vanilla.StdDev:F5}, so the cycle term is not doing its job. ({cycle})");
-
-        AssertMeanIsIntact(vanilla, tick, cycle, nominal: (double)Chance / 128);
+        AssertMeanIsIntact(vanilla, tick, cycle, nominal: P);
     }
 
     /// <summary>
@@ -207,15 +207,24 @@ public static class BiasTests
         var cycle = Measure("+tick+cycle", OffsetMode.TickAndCycle, fires);
         Log.Info($"coin flip over {Ticks} ticks -- {vanilla} | {tick} | {cycle}");
 
-        if (vanilla.Max - vanilla.Min < 0.05)
-            throw new AssertionException(
-                $"expected the unmodified game's luckiest and unluckiest positions to differ by " +
-                $"at least 5 points, found {(vanilla.Max - vanilla.Min) * 100:F1}. ({vanilla})");
+        var floorOneCycle = SamplingFloor(0.5, 256);
+        var floorAll = SamplingFloor(0.5, Ticks);
 
-        if (cycle.StdDev > vanilla.StdDev / 4)
+        // 2 divides 256, so the tick alone leaves the flip pinned at 256 samples and only the
+        // cycle term reaches it. Both halves are numbers against the sampling floor rather than
+        // ratios against vanilla, which is exactly fair on a balanced volume and so makes any
+        // ratio infinite.
+        if (tick.StdDev < floorOneCycle * 0.6)
             throw new AssertionException(
-                $"+tick+cycle left the coin flip's spread at {cycle.StdDev:F5} against vanilla's " +
-                $"{vanilla.StdDev:F5}. ({cycle})");
+                $"+tick's spread is {tick.StdDev:F5}, below the {floorOneCycle:F5} that 256 samples " +
+                $"leave. Adding the tick cannot add samples where the modulus divides 256, so this " +
+                $"says the measurement is wrong rather than that the mod got better. ({tick})");
+
+        if (cycle.StdDev > floorAll * 1.5)
+            throw new AssertionException(
+                $"+tick+cycle left the coin flip's spread at {cycle.StdDev:F5}, " +
+                $"{cycle.StdDev / floorAll:F2} times the {floorAll:F5} that {Ticks} samples " +
+                $"leave. ({cycle})");
 
         if (Math.Abs(cycle.Mean - 0.5) > 0.005)
             throw new AssertionException($"+tick+cycle made the coin unfair on average. ({cycle})");
@@ -517,11 +526,15 @@ public static class BiasTests
         const double P = (double)Chance / 128;
         double Predicted(int samples) => Math.Sqrt(P * (1 - P) / samples);
 
-        // vanilla and +tick: the outcome repeats every 256 ticks, so a position gets 256 samples
-        // however long it waits. +tick+cycle: the outcome never repeats, so it gets one per tick.
+        // +tick: the outcome repeats every 256 ticks, so a position gets 256 samples however long
+        // it waits. +tick+cycle: the outcome never repeats, so it gets one per tick.
+        //
+        // Vanilla is not in this list. Whether the unmodified game gives a position 256 samples'
+        // worth of noise is a fact about the game, not about this mod, and since the 2026-09-12
+        // build it is false for a power-of-two modulus -- the volume is balanced, so vanilla is
+        // not sampling at all. That claim lives in RetirementTests.
         var cases = new[]
         {
-            (Mode: OffsetMode.Off, Label: "vanilla", Samples: 256),
             (Mode: OffsetMode.Tick, Label: "+tick", Samples: 256),
             (Mode: OffsetMode.TickAndCycle, Label: "+tick+cycle", Samples: Ticks),
         };
@@ -545,25 +558,45 @@ public static class BiasTests
     }
 
     /// <summary>
-    /// <b>The cycle term does nothing inside a single cycle, and cannot.</b>
+    /// <b>Inside a single cycle the cycle term cannot beat the samples a position gets, and on
+    /// this game build it does measurably worse than vanilla.</b>
     ///
     /// <para>The offset is <c>tick + Mix(tick &gt;&gt; 8)</c>, and within one 256-tick cycle
     /// <c>tick &gt;&gt; 8</c> is constant, so the cycle term contributes a fixed rotation for the
     /// whole window. A position's 256 outcomes in that window are therefore
     /// <see cref="OffsetMode.Tick"/>'s outcomes, rigidly relabelled -- the same histogram, the
-    /// same lumpiness, different residues wearing it.</para>
+    /// same lumpiness, different residues wearing it. Inside 256 ticks a position has exactly 256
+    /// values available to it, so no offset scheme of any kind can make it behave like more than
+    /// 256 samples. That is the bound this test holds the mod to.</para>
     ///
-    /// <para>That is a floor, not a shortfall. Inside 256 ticks a position has exactly 256 values
-    /// available to it, so no offset scheme of any kind can make it behave like more than 256
-    /// samples. The cycle term's only available job is to make <i>successive</i> windows differ,
-    /// so that counts accumulate instead of repeating. Which is why this mod does nothing
-    /// measurable for a process that resolves in under about four seconds of game time, and
-    /// everything for one a player waits on.</para>
+    /// <para><b>What changed, and why it is accepted.</b> The 2026-09-12 build fills the RNG
+    /// volume with a shuffled permutation of 0-255 per position, so for a power-of-two modulus
+    /// vanilla is not sampling at all -- <c>Roll &amp; 0x7F</c> visits every value exactly twice
+    /// at every position, and the spread between positions over one cycle is <b>exactly zero</b>.
+    /// That is better than any generator can do, because it is not a generator. Any offset
+    /// destroys it: rotating a permutation by a per-position constant gives back an ordinary
+    /// 256-sample draw. So on this build the mod is worse than vanilla inside one cycle, for
+    /// every consumer whose modulus divides 256, and it stays worse however long the world runs
+    /// because vanilla's zero never grows either.</para>
+    ///
+    /// <para>That cost is accepted rather than fixed. The mod exists for moduli that do
+    /// <i>not</i> divide 256, where the balanced volume buys nothing at all and a position is
+    /// still locked out of rare outcomes entirely -- see <see cref="ReactionTests"/>, where 77%
+    /// of positions can never run a shipped recipe. What this test still holds is the bound: the
+    /// offset must land at the noise of 256 samples, not above it. Above it would mean the mod
+    /// was adding structure rather than relabelling it, which nothing about a fixed rotation
+    /// permits, and which would be a defect rather than a trade.</para>
     /// </summary>
     [GameTest]
-    public static void WithinASingleCycleTheCycleTermChangesNothing()
+    public static void WithinASingleCycleTheCycleTermCannotBeatTheSamplesAPositionGets()
     {
         const int Chance = 5;
+        const double P = (double)Chance / 128;
+
+        // The spread 256 independent samples of a p-chance event would leave between positions.
+        // Measured against this rather than against vanilla, which on a balanced volume is zero
+        // and makes every ratio infinite.
+        var floor = Math.Sqrt(P * (1 - P) / 256);
 
         double SpreadOverOneCycle(OffsetMode mode, int startCycle)
         {
@@ -584,40 +617,53 @@ public static class BiasTests
         }
 
         var vanilla = SpreadOverOneCycle(OffsetMode.Off, 0);
+        Log.Info($"vanilla spread over one cycle {vanilla:F5}, against a 256-sample floor of " +
+                 $"{floor:F5} ({vanilla / floor:F2}x). Below the floor means the volume is " +
+                 "balanced for this modulus and vanilla is not sampling.");
 
         // Several cycles, because cycle 0 is the one where Mix(0) happens to contribute nothing
-        // and would flatter the claim by being literally identical rather than merely as lumpy.
+        // and would flatter the claim by leaving the window literally unrotated.
         foreach (var cycle in new[] { 0, 1, 7, 40 })
         {
             var oneCycle = SpreadOverOneCycle(OffsetMode.TickAndCycle, cycle);
-            var ratio = oneCycle / vanilla;
-            Log.Info($"cycle {cycle}: +tick+cycle spread over 256 ticks {oneCycle:F5} " +
-                     $"against vanilla {vanilla:F5}, ratio {ratio:F2}");
+            Log.Info($"cycle {cycle}: +tick+cycle spread over 256 ticks {oneCycle:F5}, " +
+                     $"{oneCycle / floor:F2}x the floor, {Describe(oneCycle, vanilla)}");
 
-            if (ratio < 0.6 || ratio > 1.6)
+            if (oneCycle > floor * 1.5)
                 throw new AssertionException(
-                    $"over cycle {cycle} alone, +tick+cycle's spread was {oneCycle:F5} against " +
-                    $"vanilla's {vanilla:F5} (ratio {ratio:F2}). A single cycle offers a position " +
-                    "256 values however they are offset, so anything but parity here means the " +
-                    "account of where the cycle term's benefit comes from is wrong.");
+                    $"over cycle {cycle} alone, +tick+cycle's spread was {oneCycle:F5}, " +
+                    $"{oneCycle / floor:F2} times the {floor:F5} that 256 samples leave on their " +
+                    "own. A fixed rotation of a position's 256 values cannot add structure, so " +
+                    "anything above the sampling floor means the offset is doing something the " +
+                    "account of this mod does not describe.");
         }
 
-        // And over many cycles it is emphatically not parity, so the test above is measuring a
-        // real constraint rather than a mod that does nothing.
+        // The cycle term's actual job, which it can only do across cycles: counts accumulate
+        // instead of repeating, so the spread falls as sqrt(256 / ticks) rather than staying put.
         var many = Measure("+tick+cycle", OffsetMode.TickAndCycle, r => (r & 0x7F) < Chance).StdDev;
-        if (many > vanilla / 4)
+        if (many > floor / 4)
             throw new AssertionException(
-                $"over {Ticks} ticks the spread was {many:F5} against vanilla's {vanilla:F5}; " +
-                "the cycle term is supposed to pay off across cycles even though it cannot " +
-                "inside one");
+                $"over {Ticks} ticks the spread was {many:F5} against the single-cycle floor of " +
+                $"{floor:F5}; the cycle term is supposed to pay off across cycles even though it " +
+                "cannot inside one");
     }
+
+    /// <summary>
+    /// How the mod's single-cycle spread compares with vanilla's, in words, because the ratio is
+    /// infinite whenever the volume is balanced for this modulus and a number would not say so.
+    /// </summary>
+    private static string Describe(double mod, double vanilla) =>
+        vanilla <= 0
+            ? "against vanilla's exact 0.00000 -- accepted: a balanced volume beats any sampling, " +
+              "and no offset can preserve it"
+            : $"against vanilla's {vanilla:F5}, ratio {mod / vanilla:F2}";
 
     /// <summary>
     /// Pearson correlation between two positions-indexed rate vectors. Near zero means the
     /// second measurement learned nothing from the first: the same positions are not the
     /// unlucky ones any more.
     /// </summary>
-    private static double Correlation(double[] a, double[] b)
+    internal static double Correlation(double[] a, double[] b)
     {
         double meanA = a.Average(), meanB = b.Average();
         double covariance = 0, varianceA = 0, varianceB = 0;
@@ -636,7 +682,7 @@ public static class BiasTests
     /// Redistributing luck must not create or destroy any. A mod that made every reaction
     /// twice as likely would pass every spread check above and be wrong.
     /// </summary>
-    private static void AssertMeanIsIntact(Spread vanilla, Spread tick, Spread cycle, double nominal)
+    internal static void AssertMeanIsIntact(Spread vanilla, Spread tick, Spread cycle, double nominal)
     {
         foreach (var spread in new[] { vanilla, tick, cycle })
             if (Math.Abs(spread.Mean - nominal) > nominal * 0.25)
